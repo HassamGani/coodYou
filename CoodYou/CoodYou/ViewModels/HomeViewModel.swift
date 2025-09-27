@@ -7,15 +7,62 @@ final class HomeViewModel: ObservableObject {
     @Published var selectedHall: DiningHall?
     @Published var selectedWindow: ServiceWindowType = .current
     @Published var livePool: LivePoolSnapshot?
+    @Published var activeOrder: Order?
     @Published var isPlacingOrder = false
     @Published var errorMessage: String?
 
     private let orderService = OrderService.shared
     private let manager = FirebaseManager.shared
     private var cancellables: Set<AnyCancellable> = []
+    private var ordersTask: Task<Void, Never>?
 
     init() {
         Task { await loadDiningHalls() }
+    }
+
+    deinit {
+        ordersTask?.cancel()
+        orderService.stopListening()
+    }
+
+    var displayWindow: ServiceWindowType {
+        selectedWindow == .current ? ServiceWindowType.determineWindow(config: .default) : selectedWindow
+    }
+
+    var primaryCtaLabel: String {
+        guard let hall = selectedHall else { return "Select a hall" }
+        let price = price(for: hall, window: displayWindow, soloFallback: false)
+        return String(format: "Request %@ · $%.2f", displayWindow.rawValue.capitalized, price)
+    }
+
+    var canOfferSoloFallback: Bool {
+        livePool?.queueSize ?? 0 > 0
+    }
+
+    func soloFallbackLabel(for hall: DiningHall?) -> String {
+        guard let hall else { return "Solo request" }
+        let price = soloPrice(for: hall)
+        return String(format: "Solo delivery instead · $%.2f", price)
+    }
+
+    func soloPrice(for hall: DiningHall?) -> Double {
+        guard let hall else { return 0 }
+        return price(for: hall, window: displayWindow, soloFallback: true)
+    }
+
+    func displayPrice(for hall: DiningHall) -> String {
+        let price = price(for: hall, window: displayWindow, soloFallback: false)
+        return String(format: "$%.2f", price)
+    }
+
+    func splitPriceLabel(for hall: DiningHall) -> String {
+        let actual = price(for: hall, window: displayWindow, soloFallback: false) - 0.50
+        return String(format: "$%.2f", actual)
+    }
+
+    func orderPitch(for hall: DiningHall?) -> String {
+        guard let hall else { return "Pick a dining hall to see active dashers and live timing." }
+        return "Dashers currently in \(hall.name) can grab your meal in minutes. Pair with a nearby student to split the price."
     }
 
     func loadDiningHalls() async {
@@ -39,7 +86,9 @@ final class HomeViewModel: ObservableObject {
                 )
             }
             diningHalls = halls
-            selectedHall = halls.first
+            if selectedHall == nil {
+                selectedHall = halls.first
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -47,7 +96,7 @@ final class HomeViewModel: ObservableObject {
 
     func subscribeToPool() {
         guard let hall = selectedHall else { return }
-        orderService.startListeningToPool(hallId: hall.id, window: selectedWindow)
+        orderService.startListeningToPool(hallId: hall.id, window: displayWindow)
         cancellables.removeAll()
         orderService.$livePools
             .receive(on: RunLoop.main)
@@ -57,18 +106,39 @@ final class HomeViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    func bindOrders(for uid: String) {
+        ordersTask?.cancel()
+        ordersTask = Task {
+            do {
+                for try await orders in orderService.subscribeToOrders(uid: uid) {
+                    let active = orders
+                        .filter { !$0.isTerminal }
+                        .sorted(by: { $0.createdAt > $1.createdAt })
+                        .first
+                    await MainActor.run {
+                        self.activeOrder = active
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     func createOrder(for user: UserProfile, isSoloFallback: Bool = false) async {
         guard let hall = selectedHall else { return }
         isPlacingOrder = true
         defer { isPlacingOrder = false }
 
-        let price = price(for: hall, window: selectedWindow, soloFallback: isSoloFallback)
+        let price = price(for: hall, window: displayWindow, soloFallback: isSoloFallback)
         let order = Order(
             id: UUID().uuidString,
             userId: user.id,
             hallId: hall.id,
             status: .requested,
-            windowType: selectedWindow == .current ? ServiceWindowType.determineWindow(config: .default) : selectedWindow,
+            windowType: displayWindow,
             priceCents: Int(price * 100),
             createdAt: Date(),
             pairGroupId: nil,
@@ -79,6 +149,15 @@ final class HomeViewModel: ObservableObject {
 
         do {
             try await orderService.createOrder(order)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func cancelActiveOrder(_ order: Order) async {
+        do {
+            try await orderService.cancelOrder(orderId: order.id)
+            activeOrder = nil
         } catch {
             errorMessage = error.localizedDescription
         }

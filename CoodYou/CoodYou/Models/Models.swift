@@ -49,8 +49,8 @@ struct ServiceWindow: Codable, Identifiable {
 
 struct ServiceWindowConfig: Codable {
     struct WindowRange: Codable {
-        let startHour: Int
-        let endHour: Int
+        var startHour: Int
+        var endHour: Int
     }
 
     let breakfast: WindowRange
@@ -136,7 +136,7 @@ struct Run: Identifiable, Codable {
     var deliveryPin: String?
 }
 
-enum RunStatus: String, Codable {
+enum RunStatus: String, Codable, CaseIterable {
     case readyToAssign
     case claimed
     case inProgress
@@ -178,4 +178,34 @@ struct NotificationPayload: Codable {
     var hallId: String
     var windowType: ServiceWindowType
     var runId: String?
+}
+
+extension Order {
+    var isTerminal: Bool {
+        switch status {
+        case .paid, .closed, .cancelledBuyer, .cancelledDasher, .expired, .disputed:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+extension OrderStatus {
+    var buyerFacingLabel: String {
+        switch self {
+        case .requested: return "Waiting for a match"
+        case .pooled: return "Pairing you up"
+        case .readyToAssign: return "Searching for dashers"
+        case .claimed: return "Dasher on the way"
+        case .inProgress: return "Meal being delivered"
+        case .delivered: return "Delivered"
+        case .paid: return "Payment complete"
+        case .closed: return "Closed"
+        case .expired: return "Expired"
+        case .cancelledBuyer: return "Cancelled"
+        case .cancelledDasher: return "Reassigning"
+        case .disputed: return "Dispute in review"
+        }
+    }
 }
