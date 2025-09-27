@@ -1,5 +1,5 @@
 import SwiftUI
-import FirebaseFirestoreSwift
+import FirebaseFirestore
 
 struct WalletView: View {
     @EnvironmentObject private var appState: AppState
