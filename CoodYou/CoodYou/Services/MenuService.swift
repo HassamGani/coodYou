@@ -70,39 +70,22 @@ actor MenuService {
         let periodNames = locationEntry.periods.compactMap { $0.name }
         let now = Self.currentTime(in: Self.timeZone, for: date)
         let activePeriod = Self.chooseCurrentPeriod(periodNames: periodNames, schedule: schedule, reference: now)
-        let periodRangeText: String?
-        if let ap = activePeriod {
-            periodRangeText = Self.formatRange(start: ap.start, end: ap.end, on: date)
-        } else {
-            periodRangeText = nil
-        }
+        let periodRangeText = activePeriod.flatMap { Self.formatRange(start: $0.start, end: $0.end, on: date) }
 
         let menuPeriod = activePeriod.flatMap { periodInfo in
             locationEntry.periods.first { $0.name == periodInfo.name }
         } ?? locationEntry.periods.first
 
-        let mealPeriodModel: DiningHallMenu.MealPeriod?
-        if let period = menuPeriod, let name = period.name {
+        let mealPeriodModel: DiningHallMenu.MealPeriod? = menuPeriod.flatMap { period in
+            guard let name = period.name else { return nil }
             let times = activePeriod ?? Self.chooseCurrentPeriod(periodNames: [name], schedule: schedule, reference: now)
-            let formattedRange: String?
-            if let t = times {
-                formattedRange = Self.formatRange(start: t.start, end: t.end, on: date)
-            } else {
-                formattedRange = nil
-            }
-            var startDate: Date? = nil
-            var endDate: Date? = nil
-            if let s = times?.start { startDate = Self.timeFormatter.date(from: s) }
-            if let e = times?.end { endDate = Self.timeFormatter.date(from: e) }
-
-            mealPeriodModel = DiningHallMenu.MealPeriod(
+            let formattedRange = times.flatMap { Self.formatRange(start: $0.start, end: $0.end, on: date) }
+            return DiningHallMenu.MealPeriod(
                 name: name,
-                start: startDate,
-                end: endDate,
+                start: times?.start.flatMap { Self.timeFormatter.date(from: $0) },
+                end: times?.end.flatMap { Self.timeFormatter.date(from: $0) },
                 formattedRange: formattedRange
             )
-        } else {
-            mealPeriodModel = nil
         }
 
         let stations = menuPeriod?.stations.compactMap { station -> DiningHallMenu.Station? in
@@ -270,7 +253,7 @@ private extension MenuService {
         for name in periodNames {
             guard let window = schedule[name] else { continue }
             if time(reference, isBetween: window.0, and: window.1) {
-                return (name: name, start: window.0, end: window.1)
+                return (name, window.0, window.1)
             }
         }
         return nil
@@ -351,3 +334,4 @@ private extension MenuService {
         return request
     }
 }
+*** End of File

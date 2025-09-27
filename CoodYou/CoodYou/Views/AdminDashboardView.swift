@@ -1,5 +1,5 @@
 import SwiftUI
-import FirebaseFirestore
+import FirebaseFirestoreSwift
 
 struct AdminDashboardView: View {
     @State private var halls: [DiningHall] = []

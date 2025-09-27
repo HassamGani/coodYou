@@ -18,7 +18,7 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 
 ```
 .
-├── ios/CoodYou              # SwiftUI client (Xcode project folder)
+├── CoodYou/CoodYou          # SwiftUI client (Xcode project folder)
 ├── functions                # Firebase Cloud Functions (TypeScript)
 ├── firestore.rules          # Firestore security rules
 ├── firestore.indexes.json   # Required composite indexes
@@ -28,13 +28,31 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 
 ## iOS app setup
 
-1. Open `ios/CoodYou` in Xcode.
+1. Open `CoodYou/CoodYou` in Xcode.
 2. Add your Firebase `GoogleService-Info.plist` to the `Resources` folder.
 3. Enable the following capabilities: Push Notifications, Background Modes (Location updates), and Location Updates.
 4. Install Firebase SDKs via Swift Package Manager:
    - `https://github.com/firebase/firebase-ios-sdk.git`
    - Products: FirebaseAuth, FirebaseFirestore, FirebaseFunctions, FirebaseMessaging, FirebaseCore.
-5. Configure Push Notifications and APNs keys in the Firebase console.
+   - Add `FirebaseFirestoreSwift` overlay if using Codable helpers.
+   - Add `https://github.com/google/GoogleSignIn-iOS` (GoogleSignIn) for Google login.
+5. Add `AuthenticationServices`, `PassKit`, and `Sign in with Apple` capabilities to the app target.
+6. Configure Push Notifications and APNs keys in the Firebase console.
+7. (Optional) Create an Apple Pay merchant ID and update `merchant.com.campusdash` inside `AddPaymentMethodSheet.swift`.
+
+### Authentication and onboarding
+
+- **Email / password** sign-up enforces `@columbia.edu` or `@barnard.edu` addresses and captures first/last names plus optional phone numbers.
+- **Google** and **Apple** sign-in routes through Firebase Auth, automatically provisioning a Firestore profile and school record when an allowed campus email is detected.
+- First launch presents the new **LandingView** with CampusDash branding and options to register, sign in, or use Apple/Google credentials.
+- After authentication the user must pick a campus (currently only Columbia/Barnard) before the main tab experience unlocks.
+
+### Profile, settings, and payments
+
+- The profile tab now exposes verification status, campus affiliation, and a rich settings surface for notifications, live location, auto-accepting runs, and Apple Pay confirmation requirements.
+- Payment methods are stored per-user in Firestore under `users/{uid}/paymentMethods` and can include Apple Pay, Stripe-linked cards, manual cards, PayPal, or Cash App references.
+- Adding Apple Pay launches a `PKPaymentAuthorizationController` so users double-click the side button to complete setup; other methods capture descriptive metadata only (never full PAN data).
+- Users can manage default payment methods, remove entries, and trigger password resets directly from the profile tab.
 
 ## Firebase backend setup
 

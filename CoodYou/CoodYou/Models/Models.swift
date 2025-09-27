@@ -12,6 +12,10 @@ struct UserProfile: Identifiable, Codable {
     var completedRuns: Int
     var stripeConnected: Bool
     var pushToken: String?
+    var schoolId: String?
+    var defaultPaymentMethodId: String?
+    var paymentProviderPreferences: [PaymentMethodType] = PaymentMethodType.defaultOrder
+    var settings: UserSettings = .default
 }
 
 enum UserRole: String, Codable, CaseIterable {
@@ -53,9 +57,9 @@ struct ServiceWindowConfig: Codable {
         var endHour: Int
     }
 
-    var breakfast: WindowRange
-    var lunch: WindowRange
-    var dinner: WindowRange
+    let breakfast: WindowRange
+    let lunch: WindowRange
+    let dinner: WindowRange
 
     static var `default`: ServiceWindowConfig {
         ServiceWindowConfig(
@@ -198,6 +202,86 @@ extension Order {
         default:
             return false
         }
+    }
+}
+
+struct UserSettings: Codable, Hashable {
+    var pushNotificationsEnabled: Bool
+    var locationSharingEnabled: Bool
+    var autoAcceptDashRuns: Bool
+    var applePayDoubleConfirmation: Bool
+
+    static let `default` = UserSettings(
+        pushNotificationsEnabled: true,
+        locationSharingEnabled: true,
+        autoAcceptDashRuns: false,
+        applePayDoubleConfirmation: true
+    )
+}
+
+struct PaymentMethod: Identifiable, Codable, Hashable {
+    var id: String
+    var userId: String
+    var type: PaymentMethodType
+    var displayName: String
+    var details: String?
+    var last4: String?
+    var isDefault: Bool
+    var createdAt: Date
+
+    var badgeTitle: String {
+        switch type {
+        case .stripeCard, .card:
+            return "Card"
+        case .applePay:
+            return "Apple Pay"
+        case .paypal:
+            return "PayPal"
+        case .cashApp:
+            return "Cash App"
+        }
+    }
+}
+
+enum PaymentMethodType: String, Codable, CaseIterable, Hashable, Identifiable {
+    case stripeCard
+    case card
+    case applePay
+    case paypal
+    case cashApp
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stripeCard: return "Stripe-linked card"
+        case .card: return "Saved card"
+        case .applePay: return "Apple Pay"
+        case .paypal: return "PayPal"
+        case .cashApp: return "Cash App"
+        }
+    }
+
+    static var defaultOrder: [PaymentMethodType] {
+        [.applePay, .stripeCard, .card, .paypal, .cashApp]
+    }
+}
+
+struct School: Identifiable, Codable, Hashable {
+    var id: String
+    var name: String
+    var displayName: String
+    var allowedEmailDomains: [String]
+    var campusIconName: String
+    var city: String
+    var state: String
+    var country: String
+    var primaryDiningHallIds: [String]
+
+    func supports(email: String) -> Bool {
+        let lowered = email.lowercased()
+        guard let domain = lowered.split(separator: "@").last else { return false }
+        return allowedEmailDomains.contains { $0.caseInsensitiveCompare(domain) == .orderedSame }
     }
 }
 

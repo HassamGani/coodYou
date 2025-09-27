@@ -3,12 +3,16 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingAdmin = false
+    @State private var settingsDraft: UserSettings = .default
+    @State private var settingsError: String?
+    @State private var isUpdatingSettings = false
     private let roleColumns = [GridItem(.adaptive(minimum: 100), spacing: 8)]
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 profileHeader
+                schoolSection
                 verificationCard
                 roleSection
                 walletOnboarding
@@ -27,6 +31,18 @@ struct ProfileView: View {
         .sheet(isPresented: $showingAdmin) {
             AdminDashboardView()
         }
+        .task {
+            settingsDraft = appState.currentUser?.settings ?? .default
+        }
+        .onChange(of: appState.currentUser?.settings) { _, newValue in
+            if let newValue { settingsDraft = newValue }
+        }
+        .alert(item: Binding(
+            get: { settingsError.map(ErrorMessage.init(value:)) },
+            set: { settingsError = $0?.value }
+        )) { message in
+            Alert(title: Text("Settings"), message: Text(message.value), dismissButton: .default(Text("OK")))
+        }
     }
 
     private var profileHeader: some View {
@@ -39,7 +55,7 @@ struct ProfileView: View {
                         .overlay {
                             Text(user.initials)
                                 .font(.title.weight(.bold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(.accentColor)
                         }
                     VStack(spacing: 4) {
                         Text("\(user.firstName) \(user.lastName)")
@@ -71,6 +87,37 @@ struct ProfileView: View {
                 .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
         }
+    }
+
+    private var schoolSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Campus")
+                .font(.headline)
+            if let school = appState.selectedSchool {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Image(systemName: school.campusIconName)
+                        Text(school.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Button("Switch") {
+                            appState.sessionPhase = .needsSchoolSelection
+                        }
+                        .font(.caption.weight(.bold))
+                    }
+                    Text("Email domains: \(school.allowedEmailDomains.map { "@\($0)" }.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Select your school to unlock geofenced offers.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var verificationCard: some View {
@@ -152,6 +199,27 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
                 .font(.headline)
+            Toggle("Push notifications", isOn: Binding(
+                get: { settingsDraft.pushNotificationsEnabled },
+                set: { updateSetting(keyPath: \UserSettings.pushNotificationsEnabled, value: $0) }
+            ))
+            Toggle("Share live location near halls", isOn: Binding(
+                get: { settingsDraft.locationSharingEnabled },
+                set: { updateSetting(keyPath: \UserSettings.locationSharingEnabled, value: $0) }
+            ))
+            Toggle("Auto-accept dash runs", isOn: Binding(
+                get: { settingsDraft.autoAcceptDashRuns },
+                set: { updateSetting(keyPath: \UserSettings.autoAcceptDashRuns, value: $0) }
+            ))
+            Toggle("Require Face ID on Apple Pay", isOn: Binding(
+                get: { settingsDraft.applePayDoubleConfirmation },
+                set: { updateSetting(keyPath: \UserSettings.applePayDoubleConfirmation, value: $0) }
+            ))
+            NavigationLink {
+                PaymentMethodsView()
+            } label: {
+                Label("Payment methods", systemImage: "creditcard")
+            }
             Button {
                 try? AuthService.shared.signOut()
                 appState.reset()
@@ -187,6 +255,32 @@ struct ProfileView: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+private extension ProfileView {
+    func updateSetting<Value>(keyPath: WritableKeyPath<UserSettings, Value>, value: Value) where Value: Equatable {
+        var updated = settingsDraft
+        updated[keyPath: keyPath] = value
+        settingsDraft = updated
+        guard !isUpdatingSettings, let uid = appState.currentUser?.id else { return }
+        isUpdatingSettings = true
+        Task {
+            do {
+                try await AuthService.shared.updateSettings(updated, for: uid)
+                await MainActor.run {
+                    appState.currentUser?.settings = updated
+                }
+            } catch {
+                await MainActor.run {
+                    settingsError = error.localizedDescription
+                    settingsDraft[keyPath: keyPath] = appState.currentUser?.settings[keyPath: keyPath] ?? value
+                }
+            }
+            await MainActor.run {
+                isUpdatingSettings = false
+            }
+        }
     }
 }
 
@@ -239,7 +333,7 @@ private struct VerificationRow: View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.accentColor)
             Text(title)
                 .font(.subheadline)
             Spacer()

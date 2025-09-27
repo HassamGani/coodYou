@@ -1,5 +1,5 @@
 import SwiftUI
-import FirebaseFirestore
+import FirebaseFirestoreSwift
 
 struct WalletView: View {
     @EnvironmentObject private var appState: AppState
@@ -179,7 +179,7 @@ private struct TransactionRow: View {
                 .frame(width: 44, height: 44)
                 .overlay {
                     Image(systemName: "bag.fill")
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(.accentColor)
                 }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Run #\(record.runId.prefix(6))")

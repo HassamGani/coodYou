@@ -84,7 +84,7 @@ struct DasherAssignmentsView: View {
                 Spacer()
                 Toggle("", isOn: $viewModel.isOnline)
                     .labelsHidden()
-                    .toggleStyle(SwitchToggleStyle(tint: Color.accentColor))
+                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                     .frame(width: 50)
             }
             Text("Stay inside the dining hall geofence to receive instant run offers. When you go offline we’ll pause push notifications.")
@@ -207,7 +207,7 @@ private struct RunCard: View {
             }
 
             ProgressView(value: run.status.progressValue)
-                .tint(Color.accentColor)
+                .tint(.accentColor)
 
             if let action {
                 Button {
@@ -294,7 +294,7 @@ private struct RunDetailSheet: View {
             ForEach(RunStatus.allCases, id: \.self) { status in
                 HStack(alignment: .center, spacing: 12) {
                     Image(systemName: run.status == status ? "largecircle.fill.circle" : "circle")
-                        .foregroundStyle(run.status == status ? Color.accentColor : .secondary)
+                        .foregroundStyle(run.status == status ? .accentColor : .secondary)
                     Text(status.displayLabel)
                         .foregroundStyle(status == run.status ? .primary : .secondary)
                 }
