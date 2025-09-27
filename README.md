@@ -19,6 +19,7 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 ```
 .
 ├── ios/CoodYou              # SwiftUI client (Xcode project folder)
+├── ios/CampusDashApp        # SwiftUI client
 ├── functions                # Firebase Cloud Functions (TypeScript)
 ├── firestore.rules          # Firestore security rules
 ├── firestore.indexes.json   # Required composite indexes
@@ -29,6 +30,7 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 ## iOS app setup
 
 1. Open `ios/CoodYou` in Xcode.
+1. Open `ios/CampusDashApp` in Xcode.
 2. Add your Firebase `GoogleService-Info.plist` to the `Resources` folder.
 3. Enable the following capabilities: Push Notifications, Background Modes (Location updates), and Location Updates.
 4. Install Firebase SDKs via Swift Package Manager:
