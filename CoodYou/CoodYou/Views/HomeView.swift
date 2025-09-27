@@ -6,58 +6,86 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 40.8075, longitude: -73.9641),
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
     )
     @State private var showingHandoff = false
-
-    private var hallAnnotations: [DiningHall] {
-        viewModel.selectedHall.map { [$0] } ?? []
-    }
+    @State private var detailHall: DiningHall?
+    @State private var checkoutHall: DiningHall?
 
     var body: some View {
-        ZStack(alignment: .top) {
-            mapLayer
-            VStack(spacing: 20) {
-                headerCard
-                Spacer()
-                bottomCard
+        NavigationStack {
+            ZStack(alignment: .top) {
+                mapLayer
+                VStack(spacing: 20) {
+                    if let order = viewModel.activeOrder, !order.isTerminal {
+                        ActiveOrderCard(order: order,
+                                        hall: viewModel.selectedHall,
+                                        viewModel: viewModel,
+                                        showingHandoff: $showingHandoff)
+                            .padding(.horizontal, 20)
+                    }
+                    hallDirectoryCard
+                        .padding(.horizontal, 20)
+                    Spacer()
+                }
+                .padding(.top, 16)
+                .padding(.bottom, 32)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 32)
+            .navigationTitle("CampusDash")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationBarHidden(true)
-        .background(Color(.systemBackground))
         .sheet(isPresented: $showingHandoff) {
             if let order = viewModel.activeOrder {
                 HandoffView(order: order, run: nil)
                     .environmentObject(appState)
             }
         }
-        .onChange(of: viewModel.selectedHall) { _, hall in
-            guard let hall else { return }
-            withAnimation(.easeInOut(duration: 0.6)) {
-                region.center = hall.coordinate
+        .sheet(item: $detailHall) { hall in
+            NavigationStack {
+                DiningHallDetailView(hall: hall,
+                                     viewModel: viewModel,
+                                     checkoutHall: $checkoutHall)
+                    .navigationTitle(hall.name)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Close") { detailHall = nil }
+                        }
+                    }
             }
-            appState.activeDiningHall = hall
-            viewModel.subscribeToPool()
         }
-        .onChange(of: viewModel.selectedWindow) { _, window in
-            appState.activeWindow = window
-            viewModel.subscribeToPool()
+        .sheet(item: $checkoutHall) { hall in
+            NavigationStack {
+                CheckoutView(hall: hall, viewModel: viewModel)
+                    .environmentObject(appState)
+                    .navigationTitle("Checkout")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { checkoutHall = nil }
+                        }
+                    }
+            }
         }
         .task {
+            if let user = appState.currentUser {
+                viewModel.bindOrders(for: user.id)
+            }
             viewModel.subscribeToPool()
             if let hall = viewModel.selectedHall {
                 region.center = hall.coordinate
-            }
-            if let user = appState.currentUser {
-                viewModel.bindOrders(for: user.id)
             }
         }
         .onChange(of: appState.currentUser?.id) { _, newValue in
             guard let newValue else { return }
             viewModel.bindOrders(for: newValue)
+        }
+        .onChange(of: viewModel.selectedHall) { _, hall in
+            guard let hall else { return }
+            withAnimation(.easeInOut(duration: 0.4)) {
+                region.center = hall.coordinate
+            }
+            viewModel.subscribeToPool()
         }
         .alert(item: Binding(
             get: { viewModel.errorMessage.map(ErrorMessage.init(value:)) },
@@ -72,194 +100,94 @@ struct HomeView: View {
             coordinateRegion: $region,
             interactionModes: [.zoom, .pan],
             showsUserLocation: true,
-            userTrackingMode: .constant(.follow),
-            annotationItems: hallAnnotations
+            annotationItems: viewModel.selectedHall.map { [$0] } ?? []
         ) { hall in
             MapMarker(coordinate: hall.coordinate, tint: .accentColor)
         }
         .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
-            VStack(alignment: .trailing, spacing: 12) {
-                if let livePool = viewModel.livePool {
+            if let livePool = viewModel.livePool {
+                VStack(alignment: .trailing, spacing: 12) {
                     pillView(icon: "person.3.fill", title: "Pool", value: "\(livePool.queueSize) waiting")
-                    pillView(icon: "clock", title: "ETA", value: "\(Int(max(1, livePool.averageWaitSeconds / 60))) min")
+                    let minutes = max(1, Int(livePool.averageWaitSeconds / 60))
+                    pillView(icon: "clock", title: "ETA", value: "~\(minutes) min")
                 }
+                .padding(.top, 80)
+                .padding(.trailing, 16)
             }
-            .padding(.top, 80)
-            .padding(.trailing, 16)
         }
     }
 
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var hallDirectoryCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.selectedHall?.name ?? "Select a hall")
-                        .font(.headline)
-                    Text(viewModel.selectedHall?.campus ?? "Campus")
-                        .font(.subheadline)
+                VStack(alignment: .leading) {
+                    Text("Dining halls")
+                        .font(.title3.weight(.semibold))
+                    Text("Tap a hall to explore the live menu and start an order.")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Menu {
-                    Picker("Dining Hall", selection: $viewModel.selectedHall) {
-                        ForEach(viewModel.diningHalls, id: \.id) { hall in
-                            Text(hall.name).tag(Optional(hall))
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    ForEach(viewModel.sortedHalls) { hall in
+                        Button {
+                            viewModel.selectedHall = hall
+                            detailHall = hall
+                        } label: {
+                            hallRow(for: hall)
                         }
+                        .buttonStyle(.plain)
                     }
-                } label: {
-                    Label("Change", systemImage: "line.3.horizontal.circle")
-                        .labelStyle(.iconOnly)
-                        .font(.title3)
-                        .padding(8)
-                        .background(.thinMaterial, in: Circle())
                 }
             }
-
-            windowSelector
-
-            if let livePool = viewModel.livePool {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Pairs forming now")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Text(poolSummaryText(livePool))
-                            .font(.title3.weight(.semibold))
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-            } else {
-                ProgressView("Fetching live queue…")
-                    .font(.footnote)
-            }
+            .frame(maxHeight: 380)
         }
-        .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Color.black.opacity(0.08), radius: 24, y: 12)
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: Color.black.opacity(0.08), radius: 20, y: 10)
     }
 
-    private var windowSelector: some View {
-        HStack(spacing: 8) {
-            ForEach(ServiceWindowType.allCases.filter { $0 != .current }, id: \.self) { window in
-                let isSelected = viewModel.displayWindow == window
-                Button {
-                    viewModel.selectedWindow = window
-                } label: {
-                    Text(window.rawValue.capitalized)
+    private func hallRow(for hall: DiningHall) -> some View {
+        let status = viewModel.status(for: hall)
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(hall.name)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(hall.affiliation == .columbia ? "Columbia" : "Barnard")
+                        .font(.caption.weight(.semibold))
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(hall.affiliation == .columbia ? Color.blue.opacity(0.15) : Color.purple.opacity(0.15), in: Capsule())
+                        .foregroundStyle(hall.affiliation == .columbia ? Color.blue : Color.purple)
+                }
+                if let current = status.currentPeriodName {
+                    Text(current)
                         .font(.subheadline.weight(.semibold))
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(isSelected ? Color.accentColor : Color(.systemBackground))
-                        .foregroundStyle(isSelected ? .white : .primary)
-                        .clipShape(Capsule())
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.accentColor.opacity(isSelected ? 0 : 0.3), lineWidth: 1)
-                        )
+                        .foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var bottomCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let order = viewModel.activeOrder, !order.isTerminal {
-                ActiveOrderCard(order: order,
-                                hall: viewModel.selectedHall,
-                                viewModel: viewModel,
-                                showingHandoff: $showingHandoff)
-            } else {
-                Text("Ready to eat?")
-                    .font(.title2.weight(.bold))
-                Text(viewModel.orderPitch(for: viewModel.selectedHall))
-                    .font(.subheadline)
+                Text(status.statusMessage ?? (status.isOpen ? "Open" : "Closed"))
+                    .font(.footnote)
+                    .foregroundStyle(status.isOpen ? .green : .secondary)
+                Text(hall.address)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                priceBreakdown
-                orderButtons
             }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.1), radius: 24, y: -6)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(.systemBackground).opacity(0.9))
         )
-    }
-
-    private var priceBreakdown: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let hall = viewModel.selectedHall {
-                HStack {
-                    Text("Split meal price")
-                    Spacer()
-                    Text(viewModel.splitPriceLabel(for: hall))
-                }
-                HStack {
-                    Text("CampusDash fee")
-                    Spacer()
-                    Text("$0.50")
-                }
-                Divider()
-                HStack {
-                    Text("You pay today")
-                        .font(.headline)
-                    Spacer()
-                    Text(viewModel.displayPrice(for: hall))
-                        .font(.headline)
-                }
-            } else {
-                Text("Choose a dining hall to see pricing")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var orderButtons: some View {
-        VStack(spacing: 12) {
-            Button {
-                placeOrder(isSoloFallback: false)
-            } label: {
-                Text(viewModel.primaryCtaLabel)
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .disabled(viewModel.isPlacingOrder || appState.currentUser == nil)
-
-            Button {
-                placeOrder(isSoloFallback: true)
-            } label: {
-                Text(viewModel.soloFallbackLabel(for: viewModel.selectedHall))
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .foregroundStyle(Color.accentColor)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.accentColor, lineWidth: 1.5)
-                    )
-            }
-            .disabled(viewModel.isPlacingOrder || viewModel.selectedHall == nil || !viewModel.canOfferSoloFallback)
-            .opacity(viewModel.canOfferSoloFallback ? 1 : 0.4)
-        }
-    }
-
-    private func placeOrder(isSoloFallback: Bool) {
-        guard let user = appState.currentUser else { return }
-        Task {
-            await viewModel.createOrder(for: user, isSoloFallback: isSoloFallback)
-        }
     }
 
     private func pillView(icon: String, title: String, value: String) -> some View {
@@ -273,11 +201,6 @@ struct HomeView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private func poolSummaryText(_ snapshot: LivePoolSnapshot) -> String {
-        let waitMinutes = Int(max(1, snapshot.averageWaitSeconds / 60))
-        return "\(snapshot.queueSize) waiting · ~\(waitMinutes) min"
     }
 }
 
@@ -345,6 +268,9 @@ private struct ActiveOrderCard: View {
                     )
             }
         }
+        .padding(18)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: Color.black.opacity(0.08), radius: 20, y: 10)
     }
 }
 
@@ -358,6 +284,23 @@ private extension OrderStatus {
         case .inProgress: return 0.8
         case .delivered, .paid, .closed: return 1
         case .expired, .cancelledBuyer, .cancelledDasher, .disputed: return 0.5
+        }
+    }
+
+    var buyerFacingLabel: String {
+        switch self {
+        case .requested: return "Matching with a partner"
+        case .pooled: return "Pair secured"
+        case .readyToAssign: return "Awaiting dasher"
+        case .claimed: return "Dasher en route"
+        case .inProgress: return "Pickup in progress"
+        case .delivered: return "Delivered"
+        case .paid: return "Paid"
+        case .closed: return "Closed"
+        case .expired: return "Expired"
+        case .cancelledBuyer: return "Cancelled"
+        case .cancelledDasher: return "Dasher cancelled"
+        case .disputed: return "Needs review"
         }
     }
 }

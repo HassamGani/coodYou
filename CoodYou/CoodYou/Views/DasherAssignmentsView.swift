@@ -294,7 +294,7 @@ private struct RunDetailSheet: View {
             ForEach(RunStatus.allCases, id: \.self) { status in
                 HStack(alignment: .center, spacing: 12) {
                     Image(systemName: run.status == status ? "largecircle.fill.circle" : "circle")
-                        .foregroundStyle(run.status == status ? Color.accentColor : .secondary)
+                        .foregroundStyle(run.status == status ? .accentColor : .secondary)
                     Text(status.displayLabel)
                         .foregroundStyle(status == run.status ? .primary : .secondary)
                 }

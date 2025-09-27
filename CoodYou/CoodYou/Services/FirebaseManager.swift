@@ -1,6 +1,7 @@
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseFirestoreSwift
 import FirebaseFunctions
 
 final class FirebaseManager {
@@ -10,6 +11,7 @@ final class FirebaseManager {
     let functions: Functions
 
     private init() {
+        FirebaseConfiguration.shared.setLoggerLevel(.min)
         self.auth = Auth.auth()
         self.db = Firestore.firestore()
         self.functions = Functions.functions()

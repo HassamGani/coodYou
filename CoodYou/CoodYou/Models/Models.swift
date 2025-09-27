@@ -53,9 +53,9 @@ struct ServiceWindowConfig: Codable {
         var endHour: Int
     }
 
-    var breakfast: WindowRange
-    var lunch: WindowRange
-    var dinner: WindowRange
+    let breakfast: WindowRange
+    let lunch: WindowRange
+    let dinner: WindowRange
 
     static var `default`: ServiceWindowConfig {
         ServiceWindowConfig(
@@ -75,10 +75,20 @@ struct DiningHall: Identifiable, Codable, Hashable {
     var active: Bool
     var price: DiningHallPrice
     var geofenceRadius: Double
+    var address: String
+    var dineOnCampusSiteId: String?
+    var dineOnCampusLocationId: String?
+    var affiliation: DiningHallAffiliation
+    var defaultOpenState: Bool
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+}
+
+enum DiningHallAffiliation: String, Codable, Hashable {
+    case columbia
+    case barnard
 }
 
 struct DiningHallPrice: Codable, Hashable {

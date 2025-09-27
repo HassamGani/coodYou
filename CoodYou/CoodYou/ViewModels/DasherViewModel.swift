@@ -77,7 +77,12 @@ final class DasherViewModel: ObservableObject {
                         lunch: data["price_lunch"] as? Double ?? 0,
                         dinner: data["price_dinner"] as? Double ?? 0
                     ),
-                    geofenceRadius: data["geofenceRadius"] as? Double ?? 75
+                    geofenceRadius: data["geofenceRadius"] as? Double ?? 75,
+                    address: data["address"] as? String ?? "",
+                    dineOnCampusSiteId: data["dineOnCampusSiteId"] as? String,
+                    dineOnCampusLocationId: data["dineOnCampusLocationId"] as? String,
+                    affiliation: DiningHallAffiliation(rawValue: data["affiliation"] as? String ?? DiningHallAffiliation.columbia.rawValue) ?? .columbia,
+                    defaultOpenState: data["defaultOpenState"] as? Bool ?? true
                 )
                 lookup[hall.id] = hall
             }
@@ -88,7 +93,7 @@ final class DasherViewModel: ObservableObject {
     }
 }
 
-extension RunStatus {
+private extension RunStatus {
     var sortIndex: Int {
         switch self {
         case .readyToAssign: return 0

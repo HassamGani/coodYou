@@ -3,7 +3,7 @@ import Combine
 
 @MainActor
 final class HomeViewModel: ObservableObject {
-    @Published var diningHalls: [DiningHall] = []
+    @Published private(set) var diningHalls: [DiningHall]
     @Published var selectedHall: DiningHall?
     @Published var selectedWindow: ServiceWindowType = .current
     @Published var livePool: LivePoolSnapshot?
@@ -11,13 +11,24 @@ final class HomeViewModel: ObservableObject {
     @Published var isPlacingOrder = false
     @Published var errorMessage: String?
 
+    @Published private(set) var menus: [String: DiningHallMenu] = [:]
+    @Published private(set) var loadingMenuIds: Set<String> = []
+    @Published private(set) var menuErrors: [String: String] = [:]
+    @Published private(set) var hallStatuses: [String: DiningHallStatus] = [:]
+
+    private var cartItems: [CartItem] = []
+    private var cartHallId: String?
+
     private let orderService = OrderService.shared
-    private let manager = FirebaseManager.shared
+    private let menuService = MenuService.shared
     private var cancellables: Set<AnyCancellable> = []
     private var ordersTask: Task<Void, Never>?
 
     init() {
-        Task { await loadDiningHalls() }
+        let allHalls = DiningHallDirectory.all
+        diningHalls = allHalls
+        selectedHall = sortedHalls.first
+        Task { await bootstrapStatuses() }
     }
 
     deinit {
@@ -25,73 +36,109 @@ final class HomeViewModel: ObservableObject {
         orderService.stopListening()
     }
 
+    var sortedHalls: [DiningHall] {
+        diningHalls.sorted { lhs, rhs in
+            let lhsBucket = bucket(for: lhs)
+            let rhsBucket = bucket(for: rhs)
+            if lhsBucket != rhsBucket { return lhsBucket < rhsBucket }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
     var displayWindow: ServiceWindowType {
         selectedWindow == .current ? ServiceWindowType.determineWindow(config: .default) : selectedWindow
     }
 
-    var primaryCtaLabel: String {
-        guard let hall = selectedHall else { return "Select a hall" }
-        let price = price(for: hall, window: displayWindow, soloFallback: false)
-        return String(format: "Request %@ · $%.2f", displayWindow.rawValue.capitalized, price)
-    }
-
-    var canOfferSoloFallback: Bool {
-        livePool?.queueSize ?? 0 > 0
-    }
-
-    func soloFallbackLabel(for hall: DiningHall?) -> String {
-        guard let hall else { return "Solo request" }
-        let price = soloPrice(for: hall)
-        return String(format: "Solo delivery instead · $%.2f", price)
-    }
-
-    func soloPrice(for hall: DiningHall?) -> Double {
-        guard let hall else { return 0 }
-        return price(for: hall, window: displayWindow, soloFallback: true)
-    }
-
-    func displayPrice(for hall: DiningHall) -> String {
-        let price = price(for: hall, window: displayWindow, soloFallback: false)
-        return String(format: "$%.2f", price)
-    }
-
-    func splitPriceLabel(for hall: DiningHall) -> String {
-        let actual = price(for: hall, window: displayWindow, soloFallback: false) - 0.50
-        return String(format: "$%.2f", actual)
-    }
-
-    func orderPitch(for hall: DiningHall?) -> String {
-        guard let hall else { return "Pick a dining hall to see active dashers and live timing." }
-        return "Dashers currently in \(hall.name) can grab your meal in minutes. Pair with a nearby student to split the price."
-    }
-
-    func loadDiningHalls() async {
-        do {
-            let snapshot = try await manager.db.collection("dining_halls").whereField("active", isEqualTo: true).getDocuments()
-            let halls = try snapshot.documents.map { doc -> DiningHall in
-                let data = doc.data()
-                return DiningHall(
-                    id: doc.documentID,
-                    name: data["name"] as? String ?? "",
-                    campus: data["campus"] as? String ?? "",
-                    latitude: data["latitude"] as? Double ?? 0,
-                    longitude: data["longitude"] as? Double ?? 0,
-                    active: data["active"] as? Bool ?? false,
-                    price: DiningHallPrice(
-                        breakfast: data["price_breakfast"] as? Double ?? 0,
-                        lunch: data["price_lunch"] as? Double ?? 0,
-                        dinner: data["price_dinner"] as? Double ?? 0
-                    ),
-                    geofenceRadius: data["geofenceRadius"] as? Double ?? 75
-                )
-            }
-            diningHalls = halls
-            if selectedHall == nil {
-                selectedHall = halls.first
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+    func status(for hall: DiningHall) -> DiningHallStatus {
+        if let cached = hallStatuses[hall.id] {
+            return cached
         }
+        let defaultMessage: String
+        if hall.affiliation == .columbia && hall.dineOnCampusLocationId == nil {
+            defaultMessage = "Menu coming soon"
+        } else {
+            defaultMessage = hall.defaultOpenState ? "Open" : "Closed"
+        }
+        return DiningHallStatus(
+            isOpen: hall.defaultOpenState,
+            statusMessage: defaultMessage,
+            currentPeriodName: nil,
+            periodRangeText: nil
+        )
+    }
+
+    func menu(for hall: DiningHall) -> DiningHallMenu? {
+        menus[hall.id]
+    }
+
+    func isLoadingMenu(for hall: DiningHall) -> Bool {
+        loadingMenuIds.contains(hall.id)
+    }
+
+    func menuError(for hall: DiningHall) -> String? {
+        menuErrors[hall.id]
+    }
+
+    func loadMenuIfNeeded(for hall: DiningHall) async {
+        if menus[hall.id] != nil || loadingMenuIds.contains(hall.id) { return }
+        loadingMenuIds.insert(hall.id)
+        do {
+            let menu = try await menuService.menu(for: hall)
+            menus[hall.id] = menu
+            hallStatuses[hall.id] = menu.status
+        } catch {
+            menuErrors[hall.id] = error.localizedDescription
+            hallStatuses[hall.id] = DiningHallStatus(
+                isOpen: hall.defaultOpenState,
+                statusMessage: "Unable to load menu",
+                currentPeriodName: nil,
+                periodRangeText: nil
+            )
+        }
+        loadingMenuIds.remove(hall.id)
+        selectedHall = selectedHall ?? hall
+    }
+
+    func bootstrapStatuses() async {
+        for hall in diningHalls where hall.affiliation == .barnard {
+            await loadMenuIfNeeded(for: hall)
+        }
+    }
+
+    func hallIsOpen(_ hall: DiningHall) -> Bool {
+        status(for: hall).isOpen
+    }
+
+    func cartItems(for hall: DiningHall) -> [CartItem] {
+        cartItems.filter { $0.hallId == hall.id }
+    }
+
+    func addToCart(item: DiningHallMenu.MenuItem, hall: DiningHall) {
+        if cartHallId != hall.id {
+            cartItems.removeAll()
+            cartHallId = hall.id
+        }
+        cartItems.append(CartItem(hallId: hall.id, name: item.name))
+    }
+
+    func removeFromCart(_ item: CartItem) {
+        cartItems.removeAll { $0.id == item.id }
+        if cartItems.isEmpty {
+            cartHallId = nil
+        }
+    }
+
+    func clearCart(for hall: DiningHall) {
+        cartItems.removeAll { $0.hallId == hall.id }
+        if cartHallId == hall.id { cartHallId = nil }
+    }
+
+    func hasCart(for hall: DiningHall) -> Bool {
+        !cartItems(for: hall).isEmpty
+    }
+
+    func cartCount(for hall: DiningHall) -> Int {
+        cartItems(for: hall).count
     }
 
     func subscribeToPool() {
@@ -149,6 +196,7 @@ final class HomeViewModel: ObservableObject {
 
         do {
             try await orderService.createOrder(order)
+            clearCart(for: hall)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -160,6 +208,31 @@ final class HomeViewModel: ObservableObject {
             activeOrder = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func displayPrice(for hall: DiningHall) -> String {
+        let price = price(for: hall, window: displayWindow, soloFallback: false)
+        return String(format: "$%.2f", price)
+    }
+
+    func splitPriceLabel(for hall: DiningHall) -> String {
+        let actual = price(for: hall, window: displayWindow, soloFallback: false) - 0.50
+        return String(format: "$%.2f", actual)
+    }
+
+    func orderPitch(for hall: DiningHall?) -> String {
+        guard let hall else { return "Pick a dining hall to see active dashers and live timing." }
+        return "Dashers currently in \(hall.name) can grab your meal in minutes. Pair with a nearby student to split the price."
+    }
+
+    private func bucket(for hall: DiningHall) -> Int {
+        let isOpen = hallIsOpen(hall)
+        switch (hall.affiliation, isOpen) {
+        case (.columbia, true): return 0
+        case (.barnard, true): return 1
+        case (.columbia, false): return 2
+        case (.barnard, false): return 3
         }
     }
 
