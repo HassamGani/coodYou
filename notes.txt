@@ -1,1 +1,3 @@
-pricing: pay half per meal period
+- Pricing: each buyer pays half of the dining hall meal price for the active window plus $0.50.
+- Reference `firebase_mvp_plan.md` for the full Firebase-backed MVP blueprint.
+- Implementation lives in `ios/` and `functions/` with Firestore rules at the repo root.
