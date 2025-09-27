@@ -123,7 +123,7 @@ struct HandoffView: View {
                     .overlay {
                         Image(systemName: "bolt.fill")
                             .font(.title3)
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                     }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(run.dasherId ?? "Assigning")
