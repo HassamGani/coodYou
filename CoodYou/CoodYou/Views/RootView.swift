@@ -22,30 +22,40 @@ struct RootView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            NavigationStack {
-                HomeView()
-            }
-            .tabItem { Tab.order.label }
-            .tag(Tab.order)
+        Group {
+            switch appState.sessionPhase {
+            case .loading:
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemGroupedBackground))
+            case .signedOut:
+                NavigationStack {
+                    LandingView()
+                }
+            case .needsSchoolSelection:
+                NavigationStack {
+                    SchoolSelectionView()
+                }
+            case .active:
+                TabView(selection: $selectedTab) {
+                    NavigationStack { HomeView() }
+                        .tabItem { Tab.order.label }
+                        .tag(Tab.order)
 
-            NavigationStack {
-                DasherAssignmentsView()
-            }
-            .tabItem { Tab.dash.label }
-            .tag(Tab.dash)
+                    NavigationStack { DasherAssignmentsView() }
+                        .tabItem { Tab.dash.label }
+                        .tag(Tab.dash)
 
-            NavigationStack {
-                WalletView()
-            }
-            .tabItem { Tab.wallet.label }
-            .tag(Tab.wallet)
+                    NavigationStack { WalletView() }
+                        .tabItem { Tab.wallet.label }
+                        .tag(Tab.wallet)
 
-            NavigationStack {
-                ProfileView()
+                    NavigationStack { ProfileView() }
+                        .tabItem { Tab.profile.label }
+                        .tag(Tab.profile)
+                }
             }
-            .tabItem { Tab.profile.label }
-            .tag(Tab.profile)
         }
         .onChange(of: appState.activeRole) { _, newRole in
             if newRole == .dasher {
@@ -59,5 +69,6 @@ struct RootView: View {
                 selectedTab = .dash
             }
         }
+        .animation(.easeInOut, value: appState.sessionPhase)
     }
 }
