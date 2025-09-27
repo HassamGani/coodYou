@@ -10,7 +10,8 @@ final class FirebaseManager {
     let functions: Functions
 
     private init() {
-        FirebaseConfiguration.shared.setLoggerLevel(.min)
+        // Firebase SDK v12+ does not expose FirebaseConfiguration in the same way.
+        // Initialize the services directly.
         self.auth = Auth.auth()
         self.db = Firestore.firestore()
         self.functions = Functions.functions()

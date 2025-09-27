@@ -53,9 +53,9 @@ struct ServiceWindowConfig: Codable {
         var endHour: Int
     }
 
-    let breakfast: WindowRange
-    let lunch: WindowRange
-    let dinner: WindowRange
+    var breakfast: WindowRange
+    var lunch: WindowRange
+    var dinner: WindowRange
 
     static var `default`: ServiceWindowConfig {
         ServiceWindowConfig(

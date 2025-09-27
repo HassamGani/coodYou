@@ -52,7 +52,7 @@ struct HandoffView: View {
             ZStack(alignment: .bottomLeading) {
                 if let bindingRegion = regionBinding {
                     Map(coordinateRegion: bindingRegion, annotationItems: annotationItems) { point in
-                        MapMarker(coordinate: point.coordinate, tint: .accentColor)
+                        MapMarker(coordinate: point.coordinate, tint: Color.accentColor)
                     }
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -117,13 +117,13 @@ struct HandoffView: View {
             Text("Dasher")
                 .font(.headline)
             HStack(alignment: .center, spacing: 16) {
-                Circle()
+                    Circle()
                     .fill(Color.accentColor.opacity(0.2))
                     .frame(width: 52, height: 52)
                     .overlay {
                         Image(systemName: "bolt.fill")
                             .font(.title3)
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                     }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(run.dasherId ?? "Assigning")

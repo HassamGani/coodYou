@@ -93,7 +93,7 @@ final class DasherViewModel: ObservableObject {
     }
 }
 
-private extension RunStatus {
+extension RunStatus {
     var sortIndex: Int {
         switch self {
         case .readyToAssign: return 0

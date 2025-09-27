@@ -102,7 +102,7 @@ struct HomeView: View {
             showsUserLocation: true,
             annotationItems: viewModel.selectedHall.map { [$0] } ?? []
         ) { hall in
-            MapMarker(coordinate: hall.coordinate, tint: .accentColor)
+            MapMarker(coordinate: hall.coordinate, tint: Color.accentColor)
         }
         .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
@@ -231,7 +231,7 @@ private struct ActiveOrderCard: View {
             }
 
             ProgressView(value: order.status.progressValue)
-                .tint(.accentColor)
+                .tint(Color.accentColor)
 
             if !order.pinCode.isEmpty && order.status != .requested && order.status != .pooled {
                 HStack {
@@ -287,20 +287,5 @@ private extension OrderStatus {
         }
     }
 
-    var buyerFacingLabel: String {
-        switch self {
-        case .requested: return "Matching with a partner"
-        case .pooled: return "Pair secured"
-        case .readyToAssign: return "Awaiting dasher"
-        case .claimed: return "Dasher en route"
-        case .inProgress: return "Pickup in progress"
-        case .delivered: return "Delivered"
-        case .paid: return "Paid"
-        case .closed: return "Closed"
-        case .expired: return "Expired"
-        case .cancelledBuyer: return "Cancelled"
-        case .cancelledDasher: return "Dasher cancelled"
-        case .disputed: return "Needs review"
-        }
-    }
+    // buyerFacingLabel is defined in Models.OrderStatus extension; duplicate removed.
 }
