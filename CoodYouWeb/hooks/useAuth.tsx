@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import {
   GoogleAuthProvider,
   OAuthProvider,
@@ -43,33 +43,34 @@ async function ensureProfile(user: User, campusHint?: Campus) {
   const ref = doc(db, 'users', user.uid);
   const snapshot = await getDoc(ref);
   const email = user.email ?? '';
-  if (!isEduEmail(email)) {
-    throw new Error('A Columbia or Barnard email is required.');
+  // If a profile already exists, return it.
+  if (snapshot.exists()) {
+    return snapshot.data() as UserProfile;
   }
 
-  if (!snapshot.exists()) {
-    const campus: Campus = campusHint ?? (email.endsWith('@barnard.edu') ? 'barnard' : 'columbia');
-    const profile: UserProfile = {
-      id: user.uid,
-      email,
-      displayName: user.displayName ?? email.split('@')[0],
-      campus,
-      notificationPreferences: {
-        inHall: true,
-        nearHall: true,
-        marketing: false
-      },
-      walletBalanceCents: 0,
-      totalOrders: 0,
-      totalRuns: 0,
-      activeRole: 'buyer'
-    };
+  // For edu emails, determine campus (or use campusHint). For non-edu emails, omit campus entirely.
+  const isEdu = isEduEmail(email);
+  const campus: Campus | undefined = isEdu ? (campusHint ?? (email.endsWith('@barnard.edu') ? 'barnard' : 'columbia')) : undefined;
 
-    await setDoc(ref, { ...profile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-    return profile;
-  }
+  const profile: UserProfile = {
+    id: user.uid,
+    email,
+    displayName: user.displayName ?? email.split('@')[0],
+    // campus is optional in the type; include only when known
+    ...(campus ? { campus } : {}),
+    notificationPreferences: {
+      inHall: true,
+      nearHall: true,
+      marketing: false
+    },
+    walletBalanceCents: 0,
+    totalOrders: 0,
+    totalRuns: 0,
+    activeRole: 'buyer'
+  } as UserProfile;
 
-  return snapshot.data() as UserProfile;
+  await setDoc(ref, { ...profile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return profile;
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -103,64 +104,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const signInWithEmail = async (email: string, password: string) => {
-    if (!isEduEmail(email)) throw new Error('Use your @columbia.edu or @barnard.edu email.');
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    // Allow non-edu emails; profiles for those accounts will not have a campus.
     await signInWithEmailAndPassword(auth, email, password);
-  };
+  }, []);
 
-  const signUpWithEmail = async ({ email, password, displayName, campus }: { email: string; password: string; displayName: string; campus: Campus }) => {
-    if (!isEduEmail(email)) throw new Error('Use your @columbia.edu or @barnard.edu email.');
+  const signUpWithEmail = useCallback(async ({ email, password, displayName, campus }: { email: string; password: string; displayName: string; campus: Campus }) => {
+    // Allow non-edu emails to register; for non-edu accounts the provided campus will be ignored and the stored profile will omit campus.
     const credentials = await createUserWithEmailAndPassword(auth, email, password);
     if (credentials.user && displayName) {
       await updateProfile(credentials.user, { displayName });
     }
-    await ensureProfile(credentials.user, campus);
+    // Only pass campus hint to ensureProfile for edu emails
+    await ensureProfile(credentials.user, isEduEmail(email) ? campus : undefined);
     await sendEmailVerification(credentials.user);
-  };
+  }, []);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ hd: 'columbia.edu' });
+    // Don't force the hosted domain param here; allow any Google account.
     const { user: googleUser } = await signInWithPopup(auth, provider);
     const email = googleUser.email ?? '';
-    if (!isEduEmail(email)) {
-      await firebaseSignOut(auth);
-      throw new Error('Google account must be a Columbia or Barnard email.');
-    }
-    await ensureProfile(googleUser);
-  };
+    // For edu emails, we'll pass no campus hint since backend will resolve authority; non-edu accounts will just get a profile without campus.
+    await ensureProfile(googleUser, isEduEmail(email) ? undefined : undefined);
+  }, []);
 
-  const signInWithApple = async () => {
+  const signInWithApple = useCallback(async () => {
     const provider = new OAuthProvider('apple.com');
     provider.addScope('email');
     provider.addScope('name');
     const { user: appleUser } = await signInWithPopup(auth, provider);
     const email = appleUser.email ?? profile?.email ?? '';
-    if (!isEduEmail(email)) {
-      await firebaseSignOut(auth);
-      throw new Error('Apple ID must share a Columbia or Barnard email.');
-    }
-    await ensureProfile(appleUser);
-  };
+    // Allow Apple IDs without edu emails; ensureProfile will omit campus for those accounts.
+    await ensureProfile(appleUser, isEduEmail(email) ? undefined : undefined);
+  }, [profile]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setProfile(null);
-  };
+  }, []);
 
-  const updateNotificationPrefs = async (prefs: UserProfile['notificationPreferences']) => {
+  const updateNotificationPrefs = useCallback(async (prefs: UserProfile['notificationPreferences']) => {
     if (!user) return;
     const ref = doc(db, 'users', user.uid);
     await updateDoc(ref, { notificationPreferences: prefs, updatedAt: serverTimestamp() });
     setProfile((prev) => (prev ? { ...prev, notificationPreferences: prefs } : prev));
-  };
+  }, [user]);
 
-  const setActiveRole = async (role: UserProfile['activeRole']) => {
+  const setActiveRole = useCallback(async (role: UserProfile['activeRole']) => {
     if (!user) return;
     const ref = doc(db, 'users', user.uid);
     await updateDoc(ref, { activeRole: role, updatedAt: serverTimestamp() });
     setProfile((prev) => (prev ? { ...prev, activeRole: role } : prev));
-  };
+  }, [user]);
 
   const value = useMemo(
     () => ({
@@ -175,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateNotificationPrefs,
       setActiveRole
     }),
-    [loading, profile, user]
+    [loading, profile, user, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple, signOut, updateNotificationPrefs, setActiveRole]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

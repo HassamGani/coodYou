@@ -83,7 +83,7 @@ export interface UserProfile {
   id: string;
   email: string;
   displayName: string;
-  campus: Campus;
+  campus?: Campus;
   phoneNumber?: string;
   photoURL?: string;
   rating?: number;

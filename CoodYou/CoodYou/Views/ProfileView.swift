@@ -6,15 +6,12 @@ struct ProfileView: View {
     @State private var settingsDraft: UserSettings = .default
     @State private var settingsError: String?
     @State private var isUpdatingSettings = false
-    private let roleColumns = [GridItem(.adaptive(minimum: 100), spacing: 8)]
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 profileHeader
                 schoolSection
-                verificationCard
-                roleSection
                 walletOnboarding
                 settingsSection
                 if appState.currentUser?.rolePreferences.contains(.admin) == true {
@@ -101,15 +98,12 @@ struct ProfileView: View {
                             .font(.subheadline.weight(.semibold))
                         Spacer()
                     }
-                    Text("Email domains: \(school.allowedEmailDomains.map { "@\($0)" }.joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     if let eligible = appState.currentUser?.eligibleSchoolIds, eligible.count > 1 {
                         Text("You’re eligible for multiple campuses. Visit Settings → Campus to choose where you dash.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     } else {
-                        Text("Campus affiliation is tied to your verified email. Contact support if something looks off.")
+                        Text("This is the University you're allowed to make deliveries for.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -125,49 +119,8 @@ struct ProfileView: View {
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
-    private var verificationCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Verification")
-                .font(.headline)
-            if let user = appState.currentUser {
-                VerificationRow(icon: "envelope.fill", title: ".edu email", status: user.email.hasSuffix(".edu") ? .verified : .pending)
-                VerificationRow(icon: "phone.fill", title: "Phone", status: user.phoneNumber == nil ? .pending : .verified)
-                VerificationRow(icon: "lock.shield", title: "Two-factor", status: .comingSoon)
-            } else {
-                Text("Sign in to view verification status.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
 
-    private var roleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Roles")
-                .font(.headline)
-            if let roles = appState.currentUser?.rolePreferences {
-                LazyVGrid(columns: roleColumns, alignment: .leading, spacing: 8) {
-                    ForEach(roles, id: \.self) { role in
-                        Text(role.displayName)
-                            .font(.footnote.weight(.semibold))
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                }
-            } else {
-                Text("No roles selected yet.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
+    
 
     private var walletOnboarding: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -307,57 +260,7 @@ private struct StatPill: View {
     }
 }
 
-private enum VerificationStatus {
-    case verified
-    case pending
-    case comingSoon
 
-    var label: String {
-        switch self {
-        case .verified: return "Verified"
-        case .pending: return "Pending"
-        case .comingSoon: return "Coming soon"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .verified: return .green
-        case .pending: return .orange
-        case .comingSoon: return .gray
-        }
-    }
-}
-
-private struct VerificationRow: View {
-    let icon: String
-    let title: String
-    let status: VerificationStatus
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .frame(width: 28, height: 28)
-                .foregroundStyle(Color.accentColor)
-            Text(title)
-                .font(.subheadline)
-            Spacer()
-            Text(status.label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(status.color)
-        }
-    }
-}
-
-private extension UserRole {
-    var displayName: String {
-        switch self {
-        case .buyer: return "Buyer"
-        case .dasher: return "Dasher"
-        case .admin: return "Admin"
-        }
-    }
-}
 
 private extension UserProfile {
     var initials: String {
