@@ -94,7 +94,9 @@ final class HomeViewModel: ObservableObject {
     }
 
     var hasResults: Bool {
-        !schoolResults.isEmpty || !hallResults.isEmpty
+        if !schoolResults.isEmpty || !hallResults.isEmpty { return true }
+        if activeSchoolFilter != nil { return true }
+        return false
     }
 
     func status(for hall: DiningHall) -> DiningHallStatus {
@@ -316,7 +318,12 @@ final class HomeViewModel: ObservableObject {
     }
 
     func halls(for school: School) -> [DiningHall] {
-        diningHalls.filter { $0.schoolId == school.id }
+        let ids = Set(school.diningHallIds + school.primaryDiningHallIds)
+        if !ids.isEmpty {
+            let matched = hallService.halls.filter { ids.contains($0.id) }
+            if !matched.isEmpty { return matched }
+        }
+        return hallService.halls.filter { $0.schoolId == school.id }
     }
 
     func school(for hall: DiningHall) -> School? {
@@ -327,7 +334,7 @@ final class HomeViewModel: ObservableObject {
         if let filter = activeSchoolFilter {
             return halls(for: filter)
         }
-        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hallResults.isEmpty {
+        if !hallResults.isEmpty {
             return hallResults
         }
         return diningHalls
@@ -337,10 +344,14 @@ final class HomeViewModel: ObservableObject {
         activeSchoolFilter = school
         let hallsForSchool = halls(for: school)
         hallResults = hallsForSchool
+        schoolResults = []
         if let first = hallsForSchool.first {
             selectedHall = first
         }
         isSearching = false
+        ignoreSearchChanges = true
+        searchText = ""
+        ignoreSearchChanges = false
     }
 
     func selectHall(_ hall: DiningHall) {
@@ -353,7 +364,9 @@ final class HomeViewModel: ObservableObject {
         searchTask?.cancel()
         searchText = ""
         schoolResults = []
-        hallResults = []
+        if !preserveFilter {
+            hallResults = []
+        }
         isSearching = false
         if !preserveFilter {
             activeSchoolFilter = nil

@@ -96,7 +96,7 @@ struct ProfileView: View {
             if let school = appState.selectedSchool {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Image(systemName: school.campusIconName)
+                        SchoolIconView(school: school, size: 22)
                         Text(school.displayName)
                             .font(.subheadline.weight(.semibold))
                         Spacer()

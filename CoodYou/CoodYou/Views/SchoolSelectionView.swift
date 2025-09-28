@@ -57,10 +57,8 @@ struct SchoolSelectionView: View {
     }
 
     private func schoolRow(for school: School) -> some View {
-        HStack {
-            Image(systemName: school.campusIconName)
-                .frame(width: 32)
-                .foregroundStyle(Color.accentColor)
+        HStack(spacing: 12) {
+            SchoolIconView(school: school, size: 32)
             VStack(alignment: .leading, spacing: 4) {
                 Text(school.name)
                     .font(.headline)

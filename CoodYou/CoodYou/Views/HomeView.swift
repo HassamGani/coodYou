@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import UIKit
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
@@ -178,10 +179,9 @@ struct HomeView: View {
                                 ForEach(viewModel.schoolResults) { school in
                                     Button {
                                         viewModel.activateSchool(school)
+                                        Task { await viewModel.clearSearch(preserveFilter: true) }
                                     } label: {
-                                        resultRow(title: school.displayName,
-                                                  subtitle: "@" + school.allowedEmailDomains.joined(separator: ", @"),
-                                                  icon: school.iconName)
+                                        schoolRowResult(school: school)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -232,14 +232,12 @@ struct HomeView: View {
 
     private func resultRow(title: String, subtitle: String, icon: String?) -> some View {
         HStack(spacing: 12) {
-            if let icon, !icon.isEmpty {
+            if let icon, !icon.isEmpty, UIImage(systemName: icon) != nil {
                 Image(systemName: icon)
                     .frame(width: 24, height: 24)
                     .foregroundStyle(Color.accentColor)
             } else {
-                Image(systemName: "mappin.and.ellipse")
-                    .frame(width: 24, height: 24)
-                    .foregroundStyle(Color.accentColor)
+                fallbackIcon(for: title)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -255,6 +253,28 @@ struct HomeView: View {
         }
         .padding(10)
         .background(Color(.systemBackground).opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func fallbackIcon(for title: String) -> some View {
+        Circle()
+            .fill(Color.accentColor.opacity(0.12))
+            .frame(width: 28, height: 28)
+            .overlay(
+                Text(String(title.prefix(1)).uppercased())
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+            )
+    }
+
+    private func schoolRowResult(school: School) -> some View {
+        resultRow(title: school.displayName,
+                  subtitle: "@" + school.allowedEmailDomains.joined(separator: ", @"),
+                  icon: validSystemIconName(from: school.iconName))
+    }
+
+    private func validSystemIconName(from iconName: String?) -> String? {
+        guard let iconName, UIImage(systemName: iconName) != nil else { return nil }
+        return iconName
     }
 
     private func accentColor(for schoolId: String) -> Color {

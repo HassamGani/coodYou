@@ -86,8 +86,6 @@ struct DiningHall: Identifiable, Codable, Hashable {
     var price: DiningHallPrice
     var geofenceRadius: Double
     var address: String
-    var dineOnCampusSiteId: String?
-    var dineOnCampusLocationId: String?
     var menuIds: [String]
     var iconName: String?
     var city: String?
@@ -320,6 +318,7 @@ struct School: Identifiable, Codable, Hashable {
     var city: String
     var state: String
     var country: String
+    var diningHallIds: [String]
     var primaryDiningHallIds: [String]
     var active: Bool
 

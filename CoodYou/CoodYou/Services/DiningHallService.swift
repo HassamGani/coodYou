@@ -31,10 +31,18 @@ final class DiningHallService: ObservableObject {
         let schoolsById = Dictionary(uniqueKeysWithValues: schoolList.map { ($0.id, $0) })
 
         let task = Task<[DiningHall], Error> { [db, schoolList, schoolsById] in
-            let snapshot = try await db.collection("dining_halls")
-                .whereField("active", isEqualTo: true)
-                .getDocuments()
-            return snapshot.documents.compactMap { document in
+            let primarySnapshot = try await db.collection("diningHalls").getDocuments()
+            let documents: [QueryDocumentSnapshot]
+            if primarySnapshot.documents.isEmpty {
+                let legacy = try await db.collection("dining_halls")
+                    .whereField("active", isEqualTo: true)
+                    .getDocuments()
+                documents = legacy.documents
+            } else {
+                documents = primarySnapshot.documents
+            }
+
+            return documents.compactMap { document in
                 do {
                     var record = try document.data(as: DiningHallDocument.self)
                     record.id = document.documentID
@@ -50,7 +58,13 @@ final class DiningHallService: ObservableObject {
 
         do {
             let fetched = try await task.value
-            applyCache(with: fetched)
+            var halls = fetched
+            let existingIds = Set(halls.map { $0.id })
+            let fallbacks = DiningHallStaticData.entries
+                .filter { !existingIds.contains($0.id) }
+                .map { $0.makeDiningHall() }
+            halls.append(contentsOf: fallbacks)
+            applyCache(with: halls)
         } catch {
             loadTask = nil
             throw error
@@ -101,8 +115,6 @@ private struct DiningHallDocument: Codable {
     var geofenceRadius: Double?
     var address: String?
     var location: String?
-    var dineOnCampusSiteId: String?
-    var dineOnCampusLocationId: String?
     var menuIds: [String]?
     var iconName: String?
     var city: String?
@@ -127,11 +139,16 @@ private struct DiningHallDocument: Codable {
 
         let lat = latitude ?? 0
         let lon = longitude ?? 0
+        if abs(lat) < 0.0001 && abs(lon) < 0.0001 {
+            return nil
+        }
         let price = DiningHallPrice(
             breakfast: price_breakfast ?? DiningHallPrice.standard.breakfast,
             lunch: price_lunch ?? DiningHallPrice.standard.lunch,
             dinner: price_dinner ?? DiningHallPrice.standard.dinner
         )
+
+        let resolvedAddress = address ?? location ?? ""
 
         return DiningHall(
             id: id,
@@ -143,9 +160,7 @@ private struct DiningHallDocument: Codable {
             active: active ?? true,
             price: price,
             geofenceRadius: geofenceRadius ?? 75,
-            address: address ?? location ?? "",
-            dineOnCampusSiteId: dineOnCampusSiteId,
-            dineOnCampusLocationId: dineOnCampusLocationId,
+            address: resolvedAddress,
             menuIds: menuIds ?? [],
             iconName: iconName,
             city: city,

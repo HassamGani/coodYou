@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseFirestore
 
 actor MenuService {
     static let shared = MenuService()
@@ -6,13 +7,7 @@ actor MenuService {
     private let session: URLSession
     private let jsonDecoder: JSONDecoder
     private let apiBase = URL(string: "https://apiv4.dineoncampus.com")!
-    private let headers: [String: String] = [
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/plain, */*",
-        "User-Agent": "CampusDash/1.0 (+campusdashiOS)",
-        "Origin": "https://dineoncampus.com",
-        "Referer": "https://dineoncampus.com/barnard"
-    ]
+    private let db = FirebaseManager.shared.db
 
     private init() {
         session = URLSession(configuration: .default)
@@ -21,46 +16,27 @@ actor MenuService {
     }
 
     func menu(for hall: DiningHall, on date: Date = Date()) async throws -> DiningHallMenu {
-        guard let siteId = hall.dineOnCampusSiteId, let locationId = hall.dineOnCampusLocationId else {
-            let status = DiningHallStatus(
-                isOpen: hall.defaultOpenState,
-                statusMessage: "Menu coming soon",
-                currentPeriodName: nil,
-                periodRangeText: nil
-            )
-            return DiningHallMenu(
-                hallId: hall.id,
-                status: status,
-                currentPeriod: nil,
-                stations: [],
-                isComingSoon: true
-            )
+        let dateString = Self.dateFormatter.string(from: date)
+        if let stored = try await fetchStoredMenu(hallId: hall.id, date: dateString) {
+            return stored
         }
 
-        let dateString = Self.dateFormatter.string(from: date)
-        async let todaysMenuTask = fetchTodaysMenu(siteId: siteId, date: dateString)
-        async let locationsPublicTask = fetchLocationsPublic(siteId: siteId)
+        guard let metadata = DiningHallStaticData.menuMetadata(for: hall.id) else {
+            return comingSoonMenu(for: hall, statusMessage: "Menu coming soon")
+        }
+
+        let headers = headers(for: metadata)
+        async let todaysMenuTask = fetchTodaysMenu(siteId: metadata.siteId, date: dateString, headers: headers)
+        async let locationsPublicTask = fetchLocationsPublic(siteId: metadata.siteId, headers: headers)
 
         let menuResponse = try await todaysMenuTask
         let locationsResponse = try await locationsPublicTask
 
-        guard let locationEntry = menuResponse.locations.first(where: { $0.id == locationId }) else {
-            let status = DiningHallStatus(
-                isOpen: false,
-                statusMessage: "Menu not published",
-                currentPeriodName: nil,
-                periodRangeText: nil
-            )
-            return DiningHallMenu(
-                hallId: hall.id,
-                status: status,
-                currentPeriod: nil,
-                stations: [],
-                isComingSoon: false
-            )
+        guard let locationEntry = menuResponse.locations.first(where: { $0.id == metadata.locationId }) else {
+            return comingSoonMenu(for: hall, statusMessage: "Menu not published")
         }
 
-        let locationPublic = locationsResponse.location(withId: locationId)
+        let locationPublic = locationsResponse.location(withId: metadata.locationId)
         let statusMessage = locationPublic?.status?.message
         let isOpen = locationPublic?.status?.isOpen ?? hall.defaultOpenState
         let scheduleMap = locationPublic?.publishedPeriodTimes ?? [:]
@@ -116,6 +92,34 @@ actor MenuService {
             isComingSoon: false
         )
     }
+
+    private func comingSoonMenu(for hall: DiningHall, statusMessage: String?) -> DiningHallMenu {
+        let status = DiningHallStatus(
+            isOpen: hall.defaultOpenState,
+            statusMessage: statusMessage,
+            currentPeriodName: nil,
+            periodRangeText: nil
+        )
+        return DiningHallMenu(
+            hallId: hall.id,
+            status: status,
+            currentPeriod: nil,
+            stations: [],
+            isComingSoon: true
+        )
+    }
+
+    private func fetchStoredMenu(hallId: String, date: String) async throws -> DiningHallMenu? {
+        let snapshot = try await db.collection("menus")
+            .whereField("diningHallId", isEqualTo: hallId)
+            .whereField("date", isEqualTo: date)
+            .limit(to: 1)
+            .getDocuments()
+
+        guard let document = snapshot.documents.first else { return nil }
+        let record = try document.data(as: MenuDocument.self)
+        return record.makeMenu()
+    }
 }
 
 private extension MenuService {
@@ -144,6 +148,78 @@ private extension MenuService {
     struct MenuItem: Decodable {
         let id: String?
         let name: String?
+    }
+
+    struct MenuDocument: Codable {
+        struct DocumentMealPeriod: Codable {
+            struct DocumentStation: Codable {
+                struct DocumentItem: Codable {
+                    var id: String?
+                    var name: String
+                }
+
+                var id: String?
+                var name: String?
+                var items: [DocumentItem]?
+            }
+
+            var name: String
+            var start: String?
+            var end: String?
+            var formattedRange: String?
+            var stations: [DocumentStation]?
+        }
+
+        var diningHallId: String
+        var date: String
+        var isOpen: Bool?
+        var statusMessage: String?
+        var currentPeriodName: String?
+        var periodRangeText: String?
+        var mealPeriods: [DocumentMealPeriod]
+
+        func makeMenu() -> DiningHallMenu {
+            let status = DiningHallStatus(
+                isOpen: isOpen ?? true,
+                statusMessage: statusMessage,
+                currentPeriodName: currentPeriodName,
+                periodRangeText: periodRangeText
+            )
+
+            guard let period = mealPeriods.first else {
+                return DiningHallMenu(
+                    hallId: diningHallId,
+                    status: status,
+                    currentPeriod: nil,
+                    stations: [],
+                    isComingSoon: false
+                )
+            }
+
+            let startDate = period.start.flatMap { MenuService.timeFormatter.date(from: $0) }
+            let endDate = period.end.flatMap { MenuService.timeFormatter.date(from: $0) }
+            let menuPeriod = DiningHallMenu.MealPeriod(name: period.name,
+                                                       start: startDate,
+                                                       end: endDate,
+                                                       formattedRange: period.formattedRange)
+
+            let stations = (period.stations ?? []).map { station -> DiningHallMenu.Station in
+                let items = (station.items ?? []).map { item in
+                    DiningHallMenu.MenuItem(id: item.id ?? UUID().uuidString, name: item.name)
+                }
+                return DiningHallMenu.Station(id: station.id ?? UUID().uuidString,
+                                               name: station.name ?? "Station",
+                                               items: items)
+            }
+
+            return DiningHallMenu(
+                hallId: diningHallId,
+                status: status,
+                currentPeriod: menuPeriod,
+                stations: stations,
+                isComingSoon: false
+            )
+        }
     }
 
     struct LocationsPublicResponse: Decodable {
@@ -310,31 +386,41 @@ private extension MenuService {
         return "\(displayFormatter.string(from: actualStart)) – \(displayFormatter.string(from: actualEnd))"
     }
 
-    func fetchTodaysMenu(siteId: String, date: String) async throws -> TodaysMenuResponse {
+    func fetchTodaysMenu(siteId: String, date: String, headers: [String: String]) async throws -> TodaysMenuResponse {
         var components = URLComponents(url: apiBase.appendingPathComponent("sites/todays_menu"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "siteId", value: siteId),
             URLQueryItem(name: "date", value: date)
         ]
-        let request = buildRequest(url: components.url!)
+        let request = buildRequest(url: components.url!, headers: headers)
         let (data, _) = try await session.data(for: request)
         return try jsonDecoder.decode(TodaysMenuResponse.self, from: data)
     }
 
-    func fetchLocationsPublic(siteId: String) async throws -> LocationsPublicResponse {
+    func fetchLocationsPublic(siteId: String, headers: [String: String]) async throws -> LocationsPublicResponse {
         var components = URLComponents(url: apiBase.appendingPathComponent("sites/\(siteId)/locations-public"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "for_map", value: "true")]
-        let request = buildRequest(url: components.url!)
+        let request = buildRequest(url: components.url!, headers: headers)
         let (data, _) = try await session.data(for: request)
         return try jsonDecoder.decode(LocationsPublicResponse.self, from: data)
     }
 
-    func buildRequest(url: URL) -> URLRequest {
+    func buildRequest(url: URL, headers: [String: String]) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         headers.forEach { key, value in
             request.setValue(value, forHTTPHeaderField: key)
         }
         return request
+    }
+
+    func headers(for metadata: DiningHallStaticData.MenuMetadata) -> [String: String] {
+        [
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": metadata.userAgent,
+            "Origin": "https://dineoncampus.com",
+            "Referer": metadata.referer
+        ]
     }
 }

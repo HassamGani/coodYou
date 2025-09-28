@@ -82,11 +82,20 @@ private struct SchoolDocument: Codable {
     var city: String
     var state: String
     var country: String?
+    var diningHallIds: [String]?
     var primaryDiningHallIds: [String]?
     var active: Bool?
 
     func makeSchool(id: String) -> School {
-        School(
+        let fallbackIds = DiningHallStaticData.entries(forSchoolId: id).map { $0.id }
+        var hallSet = Set(diningHallIds ?? [])
+        hallSet.formUnion(fallbackIds)
+        var primarySet = Set(primaryDiningHallIds ?? [])
+        primarySet.formUnion(fallbackIds)
+        let sortedHallIds = Array(hallSet).sorted()
+        let sortedPrimaryIds = Array(primarySet).sorted()
+
+        return School(
             id: id,
             name: name,
             displayName: displayName,
@@ -95,7 +104,8 @@ private struct SchoolDocument: Codable {
             city: city,
             state: state,
             country: country ?? "USA",
-            primaryDiningHallIds: primaryDiningHallIds ?? [],
+            diningHallIds: sortedHallIds,
+            primaryDiningHallIds: sortedPrimaryIds,
             active: active ?? true
         )
     }
