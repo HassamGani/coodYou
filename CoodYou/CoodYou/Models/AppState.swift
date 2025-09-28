@@ -69,7 +69,12 @@ final class AppState: ObservableObject {
         do {
             let profile = try await AuthService.shared.fetchProfile(uid: user.uid)
             currentUser = profile
-            selectedSchool = profile.schoolId.flatMap { SchoolDirectory.school(withId: $0) }
+            try? await SchoolService.shared.ensureSchoolsLoaded()
+            if let schoolId = profile.schoolId {
+                selectedSchool = await SchoolService.shared.school(withId: schoolId)
+            } else {
+                selectedSchool = nil
+            }
             sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
             attachPaymentStream(for: user.uid)
         } catch {

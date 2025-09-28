@@ -28,8 +28,10 @@ final class AuthService {
         }
     }
 
-    private func validateDomain(for email: String) throws -> School {
-        guard let school = SchoolDirectory.school(forEmail: email) else {
+    private func validateDomain(for email: String) async throws -> School {
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        try await SchoolService.shared.ensureSchoolsLoaded()
+        guard let school = await SchoolService.shared.school(forEmail: normalizedEmail) else {
             throw AuthError.unsupportedDomain
         }
         return school
@@ -41,22 +43,31 @@ final class AuthService {
                   password: String,
                   phoneNumber: String?,
                   school: School) async throws -> UserProfile {
-        _ = try validateDomain(for: email)
-        let authResult = try await manager.auth.createUser(withEmail: email, password: password)
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPhone = phoneNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await SchoolService.shared.ensureSchoolsLoaded()
+        guard let resolvedSchool = await SchoolService.shared.school(withId: school.id) else {
+            throw AuthError.missingSchoolSelection
+        }
+        guard resolvedSchool.supports(email: normalizedEmail) else {
+            throw AuthError.unsupportedDomain
+        }
+        let authResult = try await manager.auth.createUser(withEmail: normalizedEmail, password: password)
         let profile = buildProfile(uid: authResult.user.uid,
                                    firstName: firstName,
                                    lastName: lastName,
-                                   email: email,
-                                   phoneNumber: phoneNumber,
-                                   schoolId: school.id)
+                                   email: normalizedEmail,
+                                   phoneNumber: normalizedPhone,
+                                   schoolId: resolvedSchool.id)
         try await saveProfile(profile)
         return profile
     }
 
     func signIn(withEmail email: String, password: String) async throws -> UserProfile {
-        _ = try validateDomain(for: email)
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        _ = try await validateDomain(for: normalizedEmail)
         let authResult = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AuthDataResult, Error>) in
-            manager.auth.signIn(withEmail: email, password: password) { result, error in
+            manager.auth.signIn(withEmail: normalizedEmail, password: password) { result, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else if let result {
@@ -75,7 +86,8 @@ final class AuthService {
             throw AuthError.invalidCredential
         }
         let email = signInResult.user.profile?.email ?? ""
-        let school = try validateDomain(for: email)
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let school = try await validateDomain(for: normalizedEmail)
         let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: signInResult.user.accessToken.tokenString)
         let authResult = try await manager.auth.signIn(with: credential)
         let profile = try await ensureProfile(for: authResult.user,
@@ -98,7 +110,8 @@ final class AuthService {
                                                                fullName: credential.fullName)
         let authResult = try await manager.auth.signIn(with: firebaseCredential)
         let email = authResult.user.email ?? credential.email ?? ""
-        let school = try validateDomain(for: email)
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let school = try await validateDomain(for: normalizedEmail)
         let profile = try await ensureProfile(for: authResult.user,
                                              firstName: credential.fullName?.givenName,
                                              lastName: credential.fullName?.familyName,
@@ -111,7 +124,8 @@ final class AuthService {
     }
 
     func sendPasswordReset(to email: String) async throws {
-        try await manager.auth.sendPasswordReset(withEmail: email)
+        let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        try await manager.auth.sendPasswordReset(withEmail: normalizedEmail)
     }
 
     func fetchProfile(uid: String) async throws -> UserProfile {
@@ -145,10 +159,16 @@ final class AuthService {
     }
 
     func updateSchool(for uid: String, schoolId: String) async throws -> UserProfile {
+        try await SchoolService.shared.ensureSchoolsLoaded()
+        guard let school = await SchoolService.shared.school(withId: schoolId) else {
+            throw AuthError.missingSchoolSelection
+        }
         try await manager.db.collection("users").document(uid).updateData([
             "schoolId": schoolId
         ])
-        return try await fetchProfile(uid: uid)
+        var profile = try await fetchProfile(uid: uid)
+        profile.schoolId = school.id
+        return profile
     }
 
     private func ensureProfile(for user: FirebaseAuth.User,
@@ -167,7 +187,8 @@ final class AuthService {
             return existing
         }
 
-        let resolvedSchoolId = schoolId ?? SchoolDirectory.school(forEmail: user.email ?? "")?.id
+        try? await SchoolService.shared.ensureSchoolsLoaded()
+        let resolvedSchoolId = schoolId ?? await SchoolService.shared.school(forEmail: user.email ?? "")?.id
         let profile = buildProfile(uid: user.uid,
                                    firstName: firstName ?? "",
                                    lastName: lastName ?? "",
@@ -198,7 +219,8 @@ final class AuthService {
             schoolId: schoolId,
             defaultPaymentMethodId: nil,
             paymentProviderPreferences: PaymentMethodType.defaultOrder,
-            settings: .default
+            settings: .default,
+            createdAt: Date()
         )
     }
 

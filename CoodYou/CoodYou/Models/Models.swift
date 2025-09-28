@@ -16,6 +16,7 @@ struct UserProfile: Identifiable, Codable {
     var defaultPaymentMethodId: String?
     var paymentProviderPreferences: [PaymentMethodType] = PaymentMethodType.defaultOrder
     var settings: UserSettings = .default
+    var createdAt: Date = Date()
 }
 
 enum UserRole: String, Codable, CaseIterable {
