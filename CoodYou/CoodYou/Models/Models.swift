@@ -13,6 +13,10 @@ struct UserProfile: Identifiable, Codable {
     var stripeConnected: Bool
     var pushToken: String?
     var schoolId: String?
+    // Populated by server-side auth trigger when applicable. Clients may read this to present
+    // multi-school eligibility for a user (e.g. cross-affiliated students/staff).
+    var eligibleSchoolIds: [String]?
+    var canDash: Bool = false
     var defaultPaymentMethodId: String?
     var paymentProviderPreferences: [PaymentMethodType] = PaymentMethodType.defaultOrder
     var settings: UserSettings = .default

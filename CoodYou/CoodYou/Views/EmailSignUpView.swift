@@ -243,11 +243,11 @@ struct EmailSignUpView: View {
     }
 
     private var formIsValid: Bool {
-        !firstName.isEmpty && !lastName.isEmpty && !email.isEmpty && password.count >= 8 && selectedSchool != nil
+        !firstName.isEmpty && !lastName.isEmpty && !email.isEmpty && password.count >= 8
     }
 
     private func register() async {
-        guard formIsValid, let selectedSchool else { return }
+        guard formIsValid else { return }
         isLoading = true
         do {
             _ = try await AuthService.shared.register(
@@ -256,7 +256,7 @@ struct EmailSignUpView: View {
                 email: email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines),
                 password: password,
                 phoneNumber: phoneNumber.isEmpty ? nil : phoneNumber,
-                school: selectedSchool
+                selectedSchool: selectedSchool
             )
             dismiss()
         } catch {
@@ -285,5 +285,4 @@ struct EmailSignUpView: View {
         }
         return "Use your campus email to continue."
     }
-}
 }

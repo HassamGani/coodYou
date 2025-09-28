@@ -14,7 +14,7 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
+            ZStack(alignment: .bottom) {
                 mapLayer
                 VStack(spacing: 20) {
                     if let order = viewModel.activeOrder, !order.isTerminal {
@@ -30,6 +30,11 @@ struct HomeView: View {
                 }
                 .padding(.top, 16)
                 .padding(.bottom, 32)
+
+                // Place the search overlay last so it appears above other content (floating near the bottom)
+                searchOverlay
+                    .zIndex(1)
+                    .padding(.bottom, 24)
             }
             .navigationTitle("CampusDash")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,10 +80,26 @@ struct HomeView: View {
             if let hall = viewModel.selectedHall {
                 region.center = hall.coordinate
             }
+            // If the app state already has a selected school (from server/profile), use it
+            // to populate the directory so users immediately see their halls.
+            if let school = appState.selectedSchool {
+                viewModel.activeSchoolFilter = school
+                viewModel.hallResults = viewModel.halls(for: school)
+            }
         }
         .onChange(of: appState.currentUser?.id) { _, newValue in
             guard let newValue else { return }
             viewModel.bindOrders(for: newValue)
+        }
+        .onChange(of: appState.selectedSchool) { _, newSchool in
+            // Keep the search/directory UI in sync with the app's selected school.
+            if let school = newSchool {
+                viewModel.activeSchoolFilter = school
+                viewModel.hallResults = viewModel.halls(for: school)
+            } else {
+                viewModel.activeSchoolFilter = nil
+                Task { await viewModel.clearSearch() }
+            }
         }
         .onChange(of: viewModel.selectedHall) { _, hall in
             guard let hall else { return }
@@ -92,6 +113,106 @@ struct HomeView: View {
             set: { viewModel.errorMessage = $0?.value }
         )) { message in
             Alert(title: Text("Error"), message: Text(message.value), dismissButton: .default(Text("OK")))
+        }
+    }
+
+    private var searchOverlay: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search dining halls or universities", text: $viewModel.searchText, prompt: Text("Search dining halls or universities"))
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .onSubmit {
+                        viewModel.search(query: viewModel.searchText)
+                    }
+                if !viewModel.searchText.isEmpty {
+                    Button(role: .destructive) {
+                        Task { await viewModel.clearSearch() }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 20)
+
+            if viewModel.isSearching {
+                ProgressView()
+                    .padding(.horizontal, 20)
+            } else if !viewModel.schoolResults.isEmpty || !viewModel.hallResults.isEmpty {
+                VStack(spacing: 0) {
+                    if !viewModel.schoolResults.isEmpty {
+                        ForEach(viewModel.schoolResults) { school in
+                            Button {
+                                // Activate school filter and populate halls for that school
+                                viewModel.activeSchoolFilter = school
+                                viewModel.hallResults = viewModel.halls(for: school)
+                                // clear only search text & schools but keep hallResults visible
+                                viewModel.searchText = ""
+                                viewModel.schoolResults = []
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(school.displayName)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(school.city + ", " + school.state)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "building.columns")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(12)
+                            }
+                            .buttonStyle(.plain)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground).opacity(0.6)))
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                    if !viewModel.hallResults.isEmpty {
+                        ForEach(viewModel.hallResults) { hall in
+                            Button {
+                                viewModel.selectedHall = hall
+                                detailHall = hall
+                                Task { await viewModel.clearSearch() }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(hall.name)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(hall.address)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "fork.knife")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(12)
+                            }
+                            .buttonStyle(.plain)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground).opacity(0.6)))
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.top, 12)
+        .onChange(of: viewModel.searchText) { newValue in
+            // Debounce simple client-side: schedule search after slight delay
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if viewModel.searchText == newValue {
+                    viewModel.search(query: newValue)
+                }
+            }
         }
     }
 
@@ -131,20 +252,34 @@ struct HomeView: View {
                 Spacer()
             }
 
-            ScrollView {
-                LazyVStack(spacing: 14) {
-                    ForEach(viewModel.sortedHalls) { hall in
-                        Button {
-                            viewModel.selectedHall = hall
-                            detailHall = hall
-                        } label: {
-                            hallRow(for: hall)
+            if let school = viewModel.activeSchoolFilter {
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(viewModel.halls(for: school)) { hall in
+                            Button {
+                                viewModel.selectedHall = hall
+                                detailHall = hall
+                            } label: {
+                                hallRow(for: hall)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .frame(maxHeight: 380)
+            } else {
+                // Instructional prompt when no school selected
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Find your university")
+                        .font(.headline)
+                    Text("Search for a university above to view its dining halls.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxHeight: 120)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
             }
-            .frame(maxHeight: 380)
         }
         .padding(20)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))

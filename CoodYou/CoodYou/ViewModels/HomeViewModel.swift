@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import FirebaseFirestore
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -15,6 +16,19 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var loadingMenuIds: Set<String> = []
     @Published private(set) var menuErrors: [String: String] = [:]
     @Published private(set) var hallStatuses: [String: DiningHallStatus] = [:]
+
+    // --- Search state ---
+    @Published var searchText: String = ""
+    @Published var isSearching: Bool = false
+    @Published var schoolResults: [School] = []
+    @Published var hallResults: [DiningHall] = []
+
+    // When non-nil, the UI should show only halls for this school (set by tapping a school in search)
+    @Published var activeSchoolFilter: School?
+
+
+    private var searchTask: Task<Void, Never>?
+    private let db = FirebaseManager.shared.db
 
     private var cartItems: [CartItem] = []
     private var cartHallId: String?
@@ -224,6 +238,125 @@ final class HomeViewModel: ObservableObject {
     func orderPitch(for hall: DiningHall?) -> String {
         guard let hall else { return "Pick a dining hall to see active dashers and live timing." }
         return "Dashers currently in \(hall.name) can grab your meal in minutes. Pair with a nearby student to split the price."
+    }
+
+    // MARK: - Search
+
+    func search(query: String) {
+        searchTask?.cancel()
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Task { await clearSearch() }
+            return
+        }
+
+        isSearching = true
+        searchTask = Task { [weak self] in
+            guard let strongSelf = self else { return }
+            // Simple client-side substring match for cached schools/halls first
+            let lower = query.lowercased()
+            // Query schools collection by displayName and name (prefix search)
+            do {
+                var fetchedSchools: [School] = []
+                let schoolsSnap = try await db.collection("schools")
+                    .whereField("active", isEqualTo: true)
+                    .getDocuments()
+                for doc in schoolsSnap.documents {
+                    let d = doc.data()
+                    let school = School(
+                        id: doc.documentID,
+                        name: d["name"] as? String ?? "",
+                        displayName: d["displayName"] as? String ?? (d["name"] as? String ?? ""),
+                        allowedEmailDomains: d["allowedDomains"] as? [String] ?? [],
+                        campusIconName: d["campusIconName"] as? String ?? "building.columns",
+                        city: d["city"] as? String ?? "",
+                        state: d["state"] as? String ?? "",
+                        country: d["country"] as? String ?? "USA",
+                        primaryDiningHallIds: d["primaryDiningHallIds"] as? [String] ?? []
+                    )
+                    if school.displayName.lowercased().contains(lower) || school.name.lowercased().contains(lower) {
+                        fetchedSchools.append(school)
+                    }
+                }
+
+                var fetchedHalls: [DiningHall] = []
+                let hallsSnap = try await db.collection("dining_halls")
+                    .whereField("active", isEqualTo: true)
+                    .getDocuments()
+                for doc in hallsSnap.documents {
+                    let d = doc.data()
+                    let hall = DiningHall(
+                        id: doc.documentID,
+                        name: d["name"] as? String ?? "",
+                        campus: d["campus"] as? String ?? "",
+                        latitude: d["latitude"] as? Double ?? 0,
+                        longitude: d["longitude"] as? Double ?? 0,
+                        active: d["active"] as? Bool ?? false,
+                        price: DiningHallPrice(
+                            breakfast: d["price_breakfast"] as? Double ?? 0,
+                            lunch: d["price_lunch"] as? Double ?? 0,
+                            dinner: d["price_dinner"] as? Double ?? 0
+                        ),
+                        geofenceRadius: d["geofenceRadius"] as? Double ?? 75,
+                        address: d["address"] as? String ?? "",
+                        dineOnCampusSiteId: d["dineOnCampusSiteId"] as? String,
+                        dineOnCampusLocationId: d["dineOnCampusLocationId"] as? String,
+                        affiliation: DiningHallAffiliation(rawValue: d["affiliation"] as? String ?? DiningHallAffiliation.columbia.rawValue) ?? .columbia,
+                        defaultOpenState: d["defaultOpenState"] as? Bool ?? true
+                    )
+                    if hall.name.lowercased().contains(lower) || hall.campus.lowercased().contains(lower) {
+                        fetchedHalls.append(hall)
+                    }
+                }
+
+                await MainActor.run {
+                    strongSelf.schoolResults = fetchedSchools
+                    strongSelf.hallResults = fetchedHalls
+                    strongSelf.isSearching = false
+                    // don't change selectedHall here; let the UI drive selection when user taps
+                }
+            } catch {
+                await MainActor.run {
+                    strongSelf.errorMessage = error.localizedDescription
+                    strongSelf.isSearching = false
+                }
+            }
+        }
+    }
+
+    func halls(for school: School) -> [DiningHall] {
+        let ids = Set(school.primaryDiningHallIds)
+        if !ids.isEmpty {
+            return diningHalls.filter { ids.contains($0.id) }
+        }
+
+        // Fallback: try to infer by affiliation or campus name when primaryDiningHallIds are not provided
+        let loweredName = (school.displayName + " " + school.name).lowercased()
+        if loweredName.contains("columbia") {
+            return diningHalls.filter { $0.affiliation == .columbia }
+        }
+        if loweredName.contains("barnard") {
+            return diningHalls.filter { $0.affiliation == .barnard }
+        }
+
+        // Final fallback: match diningHall.campus against school's displayName tokens
+        let tokens = loweredName.split(whereSeparator: { $0 == " " || $0 == "," }) .map(String.init)
+        return diningHalls.filter { hall in
+            let hallCampus = hall.campus.lowercased()
+            for t in tokens where !t.isEmpty {
+                if hallCampus.contains(t) { return true }
+            }
+            return false
+        }
+    }
+
+    func clearSearch() async {
+        searchTask?.cancel()
+        await MainActor.run {
+            self.searchText = ""
+            self.schoolResults = []
+            self.hallResults = []
+            self.isSearching = false
+        }
     }
 
     private func bucket(for hall: DiningHall) -> Int {

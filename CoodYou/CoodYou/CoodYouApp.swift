@@ -29,6 +29,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         }
 #endif
-        true
+        return true
     }
 }

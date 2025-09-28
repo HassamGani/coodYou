@@ -1,7 +1,9 @@
 import Foundation
 import Combine
 import FirebaseAuth
+import FirebaseFirestore
 
+@MainActor
 final class AppState: ObservableObject {
     enum SessionPhase {
         case loading
@@ -23,6 +25,7 @@ final class AppState: ObservableObject {
 
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var paymentTask: Task<Void, Never>?
+    private var userDocListener: ListenerRegistration?
 
     init() {
         authHandle = FirebaseManager.shared.auth.addStateDidChangeListener { [weak self] _, user in
@@ -35,6 +38,7 @@ final class AppState: ObservableObject {
             FirebaseManager.shared.auth.removeStateDidChangeListener(authHandle)
         }
         paymentTask?.cancel()
+        userDocListener?.remove()
     }
 
     func reset() {
@@ -48,6 +52,8 @@ final class AppState: ObservableObject {
         sessionPhase = .signedOut
         paymentTask?.cancel()
         paymentTask = nil
+        userDocListener?.remove()
+        userDocListener = nil
     }
 
     @MainActor
@@ -70,12 +76,51 @@ final class AppState: ObservableObject {
             let profile = try await AuthService.shared.fetchProfile(uid: user.uid)
             currentUser = profile
             try? await SchoolService.shared.ensureSchoolsLoaded()
-            if let schoolId = profile.schoolId {
+            // Prefer server-provided eligibleSchoolIds when deciding selection.
+            if let eligible = profile.eligibleSchoolIds, eligible.count > 0 {
+                if eligible.count == 1 {
+                    selectedSchool = await SchoolService.shared.school(withId: eligible[0])
+                    sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
+                } else {
+                    // Multiple eligible schools: user must choose which campus to operate in.
+                    selectedSchool = nil
+                    sessionPhase = .needsSchoolSelection
+                }
+            } else if let schoolId = profile.schoolId {
                 selectedSchool = await SchoolService.shared.school(withId: schoolId)
+                sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
             } else {
                 selectedSchool = nil
+                sessionPhase = .needsSchoolSelection
             }
-            sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
+
+            // Attach a Firestore listener to the user's document so server-side updates
+            // (auth-create function writing eligibleSchoolIds/schoolId) update the session automatically.
+            userDocListener?.remove()
+            userDocListener = FirebaseManager.shared.db.collection("users").document(user.uid).addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    if let snapshot = snapshot, snapshot.exists {
+                        if let updated: UserProfile = try? snapshot.data(as: UserProfile.self) {
+                            self.currentUser = updated
+                            // Re-evaluate selectedSchool based on server-populated fields
+                            if let eligible = updated.eligibleSchoolIds, eligible.count > 0 {
+                                if eligible.count == 1 {
+                                    self.selectedSchool = await SchoolService.shared.school(withId: eligible[0])
+                                    self.sessionPhase = self.selectedSchool == nil ? .needsSchoolSelection : .active
+                                } else {
+                                    self.selectedSchool = nil
+                                    self.sessionPhase = .needsSchoolSelection
+                                }
+                            } else if let schoolId = updated.schoolId {
+                                self.selectedSchool = await SchoolService.shared.school(withId: schoolId)
+                                self.sessionPhase = self.selectedSchool == nil ? .needsSchoolSelection : .active
+                            }
+                        }
+                    }
+                }
+            }
+
             attachPaymentStream(for: user.uid)
         } catch {
             currentUser = nil

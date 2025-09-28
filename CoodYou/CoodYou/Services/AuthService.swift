@@ -2,7 +2,11 @@ import Foundation
 import AuthenticationServices
 import FirebaseAuth
 import FirebaseFirestore
+// GoogleSignIn is optional at compile-time. When the package isn't installed via SPM,
+// use conditional import to avoid a build failure ("No such module 'GoogleSignIn'").
+#if canImport(GoogleSignIn)
 import GoogleSignIn
+#endif
 import UIKit
 
 final class AuthService {
@@ -42,30 +46,46 @@ final class AuthService {
                   email: String,
                   password: String,
                   phoneNumber: String?,
-                  school: School) async throws -> UserProfile {
+                  selectedSchool: School?) async throws -> UserProfile {
+        // Allow anyone to register. Only assign a schoolId and canDash when the email domain matches a participating school's allowed domains.
         let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPhone = phoneNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         try await SchoolService.shared.ensureSchoolsLoaded()
-        guard let resolvedSchool = await SchoolService.shared.school(withId: school.id) else {
-            throw AuthError.missingSchoolSelection
-        }
-        guard resolvedSchool.supports(email: normalizedEmail) else {
-            throw AuthError.unsupportedDomain
-        }
+
+        // Create the Firebase auth user first
         let authResult = try await manager.auth.createUser(withEmail: normalizedEmail, password: password)
-        let profile = buildProfile(uid: authResult.user.uid,
-                                   firstName: firstName,
-                                   lastName: lastName,
-                                   email: normalizedEmail,
-                                   phoneNumber: normalizedPhone,
-                                   schoolId: resolvedSchool.id)
-        try await saveProfile(profile)
-        return profile
+
+        // Determine if the email maps to a participating school
+        var resolvedSchoolId: String? = nil
+        var canDash = false
+        if let schoolFromSelection = selectedSchool,
+           await SchoolService.shared.school(withId: schoolFromSelection.id) != nil,
+           schoolFromSelection.supports(email: normalizedEmail) {
+            resolvedSchoolId = schoolFromSelection.id
+            canDash = true
+        } else if let schoolByEmail = await SchoolService.shared.school(forEmail: normalizedEmail) {
+            resolvedSchoolId = schoolByEmail.id
+            canDash = true
+        }
+
+    // Build a minimal profile to store client-managed fields. Protected fields (canDash, schoolId, etc.)
+    // are authoritative server-side (cloud function). We include non-protected fields and return a local
+    // representation; server will augment the doc when the auth trigger runs.
+    let profile = buildProfile(uid: authResult.user.uid,
+                   firstName: firstName,
+                   lastName: lastName,
+                   email: normalizedEmail,
+                   phoneNumber: normalizedPhone,
+                   schoolId: nil)
+
+    try await saveClientProfile(profile)
+    return profile
     }
 
     func signIn(withEmail email: String, password: String) async throws -> UserProfile {
         let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        _ = try await validateDomain(for: normalizedEmail)
+        // Allow any email to sign in; don't enforce domain here. We'll resolve school membership when building/ensuring profiles.
         let authResult = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AuthDataResult, Error>) in
             manager.auth.signIn(withEmail: normalizedEmail, password: password) { result, error in
                 if let error {
@@ -77,9 +97,11 @@ final class AuthService {
                 }
             }
         }
-        return try await fetchProfile(uid: authResult.user.uid)
+        // Fetch or create profile; ensureProfile will assign schoolId/canDash if the user's email matches an allowed domain.
+        return try await ensureProfile(for: authResult.user, firstName: nil, lastName: nil, schoolId: nil)
     }
 
+    #if canImport(GoogleSignIn)
     func signInWithGoogle(presenting viewController: UIViewController) async throws -> UserProfile {
         let signInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
         guard let idToken = signInResult.user.idToken?.tokenString else {
@@ -87,15 +109,23 @@ final class AuthService {
         }
         let email = signInResult.user.profile?.email ?? ""
         let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let school = try await validateDomain(for: normalizedEmail)
+        // Allow any Google account to sign in. Resolve a school by email if possible and pass it to ensureProfile.
         let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: signInResult.user.accessToken.tokenString)
         let authResult = try await manager.auth.signIn(with: credential)
+        // Try to resolve a school for the Google account's email; pass nil if none.
+        let resolvedSchoolId = await SchoolService.shared.school(forEmail: normalizedEmail)?.id
         let profile = try await ensureProfile(for: authResult.user,
                                              firstName: signInResult.user.profile?.givenName,
                                              lastName: signInResult.user.profile?.familyName,
-                                             schoolId: school.id)
+                                             schoolId: resolvedSchoolId)
         return profile
     }
+    #else
+    // Stub implementation that throws when GoogleSignIn is not available at compile time.
+    func signInWithGoogle(presenting viewController: UIViewController) async throws -> UserProfile {
+        throw AuthError.invalidCredential
+    }
+    #endif
 
     func signInWithApple(credential: ASAuthorizationAppleIDCredential, currentNonce: String?) async throws -> UserProfile {
         guard let identityToken = credential.identityToken,
@@ -111,11 +141,11 @@ final class AuthService {
         let authResult = try await manager.auth.signIn(with: firebaseCredential)
         let email = authResult.user.email ?? credential.email ?? ""
         let normalizedEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let school = try await validateDomain(for: normalizedEmail)
+        let resolvedSchoolId = await SchoolService.shared.school(forEmail: normalizedEmail)?.id
         let profile = try await ensureProfile(for: authResult.user,
                                              firstName: credential.fullName?.givenName,
                                              lastName: credential.fullName?.familyName,
-                                             schoolId: school.id)
+                                             schoolId: resolvedSchoolId)
         return profile
     }
 
@@ -163,11 +193,10 @@ final class AuthService {
         guard let school = await SchoolService.shared.school(withId: schoolId) else {
             throw AuthError.missingSchoolSelection
         }
-        try await manager.db.collection("users").document(uid).updateData([
-            "schoolId": schoolId
-        ])
-        var profile = try await fetchProfile(uid: uid)
-        profile.schoolId = school.id
+        // Request server to set the authoritative schoolId after verifying eligibility.
+        let callable = manager.functions.httpsCallable("requestSetSchool")
+        _ = try await callable.call(["uid": uid, "schoolId": schoolId])
+        let profile = try await fetchProfile(uid: uid)
         return profile
     }
 
@@ -177,25 +206,31 @@ final class AuthService {
                                schoolId: String?) async throws -> UserProfile {
         if let existing = try? await fetchProfile(uid: user.uid) {
             if existing.schoolId == nil, let schoolId {
-                try await manager.db.collection("users").document(user.uid).updateData([
-                    "schoolId": schoolId
-                ])
-                var updated = existing
-                updated.schoolId = schoolId
-                return updated
+                // Ask server to set the authoritative schoolId if eligible.
+                let callable = manager.functions.httpsCallable("requestSetSchool")
+                _ = try? await callable.call(["uid": user.uid, "schoolId": schoolId])
+                // Fetch the profile again to get server-populated fields.
+                return try await fetchProfile(uid: user.uid)
             }
             return existing
         }
 
         try? await SchoolService.shared.ensureSchoolsLoaded()
-        let resolvedSchoolId = schoolId ?? await SchoolService.shared.school(forEmail: user.email ?? "")?.id
-        let profile = buildProfile(uid: user.uid,
-                                   firstName: firstName ?? "",
-                                   lastName: lastName ?? "",
-                                   email: user.email ?? "",
-                                   phoneNumber: user.phoneNumber,
-                                   schoolId: resolvedSchoolId)
-        try await saveProfile(profile)
+        var resolvedSchoolId = schoolId
+        if resolvedSchoolId == nil {
+            // await must be used in a standalone expression rather than to the right of '??' in some Swift language modes
+            resolvedSchoolId = await SchoolService.shared.school(forEmail: user.email ?? "")?.id
+        }
+    let canDash = resolvedSchoolId != nil
+    let profile = buildProfile(uid: user.uid,
+                   firstName: firstName ?? "",
+                   lastName: lastName ?? "",
+                   email: user.email ?? "",
+                   phoneNumber: user.phoneNumber,
+                   schoolId: resolvedSchoolId,
+                   canDash: canDash)
+        // Save only client-manageable fields; server function will set canDash/schoolId authoritatively.
+        try await saveClientProfile(profile)
         return profile
     }
 
@@ -204,19 +239,23 @@ final class AuthService {
                               lastName: String,
                               email: String,
                               phoneNumber: String?,
-                              schoolId: String?) -> UserProfile {
-        UserProfile(
+                              schoolId: String?,
+                              canDash: Bool = false) -> UserProfile {
+        var roles: [UserRole] = [.buyer]
+        if canDash { roles.append(.dasher) }
+        return UserProfile(
             id: uid,
             firstName: firstName.isEmpty ? "Lion" : firstName,
             lastName: lastName.isEmpty ? "Dash" : lastName,
             email: email,
             phoneNumber: phoneNumber,
-            rolePreferences: [.buyer, .dasher],
+            rolePreferences: roles,
             rating: 5.0,
             completedRuns: 0,
             stripeConnected: false,
             pushToken: nil,
             schoolId: schoolId,
+            canDash: canDash,
             defaultPaymentMethodId: nil,
             paymentProviderPreferences: PaymentMethodType.defaultOrder,
             settings: .default,
@@ -224,8 +263,27 @@ final class AuthService {
         )
     }
 
-    private func saveProfile(_ profile: UserProfile) async throws {
+    /// Save only fields that clients are allowed to write. Protected fields (canDash, rolePreferences, rating,
+    /// completedRuns, stripeConnected, schoolId) are omitted so Firestore rules do not reject the write.
+    private func saveClientProfile(_ profile: UserProfile) async throws {
         let document = manager.db.collection("users").document(profile.id)
-        try document.setData(from: profile)
+        var payload: [String: Any] = [
+            "id": profile.id,
+            "firstName": profile.firstName,
+            "lastName": profile.lastName,
+            "email": profile.email,
+            "phoneNumber": profile.phoneNumber as Any,
+            "pushToken": profile.pushToken as Any,
+            "defaultPaymentMethodId": profile.defaultPaymentMethodId as Any,
+            "paymentProviderPreferences": profile.paymentProviderPreferences,
+            "settings": [
+                "pushNotificationsEnabled": profile.settings.pushNotificationsEnabled,
+                "locationSharingEnabled": profile.settings.locationSharingEnabled,
+                "autoAcceptDashRuns": profile.settings.autoAcceptDashRuns,
+                "applePayDoubleConfirmation": profile.settings.applePayDoubleConfirmation
+            ],
+            "createdAt": profile.createdAt
+        ]
+        try await document.setData(payload, merge: true)
     }
 }
