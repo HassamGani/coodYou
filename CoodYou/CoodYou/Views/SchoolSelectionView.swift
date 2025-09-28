@@ -23,12 +23,12 @@ struct SchoolSelectionView: View {
             if let existing = appState.selectedSchool {
                 selectedSchool = existing
             } else if selectedSchool == nil {
-                selectedSchool = schoolService.schools.first
+                selectedSchool = eligibleSchools.first
             }
         }
         .onChange(of: schoolService.schools) { _, schools in
             if selectedSchool == nil {
-                selectedSchool = schools.first
+                selectedSchool = eligibleSchools.first
             }
         }
         .alert(item: Binding(
@@ -79,9 +79,22 @@ struct SchoolSelectionView: View {
         .onTapGesture { selectedSchool = school }
     }
 
+    private var eligibleSchools: [School] {
+        let all = schoolService.schools
+        if let eligible = appState.currentUser?.eligibleSchoolIds, !eligible.isEmpty {
+            let filtered = all.filter { eligible.contains($0.id) }
+            if !filtered.isEmpty { return filtered }
+        }
+        if let email = appState.currentUser?.email,
+           let match = SchoolService.shared.school(forEmail: email) {
+            return [match]
+        }
+        return all
+    }
+
     private var schoolList: some View {
         Group {
-            if schoolService.schools.isEmpty {
+            if eligibleSchools.isEmpty {
                 VStack(spacing: 16) {
                     ProgressView()
                     Text("Loading participating schools...")
@@ -91,7 +104,7 @@ struct SchoolSelectionView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 List {
-                    ForEach(schoolService.schools, id: \.id) { school in
+                    ForEach(eligibleSchools, id: \.id) { school in
                         schoolRow(for: school)
                     }
                 }

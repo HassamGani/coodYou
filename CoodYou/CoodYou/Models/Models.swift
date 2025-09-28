@@ -77,6 +77,7 @@ struct ServiceWindowConfig: Codable {
 
 struct DiningHall: Identifiable, Codable, Hashable {
     var id: String
+    var schoolId: String
     var name: String
     var campus: String
     var latitude: Double
@@ -87,17 +88,15 @@ struct DiningHall: Identifiable, Codable, Hashable {
     var address: String
     var dineOnCampusSiteId: String?
     var dineOnCampusLocationId: String?
-    var affiliation: DiningHallAffiliation
+    var menuIds: [String]
+    var iconName: String?
+    var city: String?
+    var state: String?
     var defaultOpenState: Bool
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
-}
-
-enum DiningHallAffiliation: String, Codable, Hashable {
-    case columbia
-    case barnard
 }
 
 struct DiningHallPrice: Codable, Hashable {
@@ -317,11 +316,14 @@ struct School: Identifiable, Codable, Hashable {
     var name: String
     var displayName: String
     var allowedEmailDomains: [String]
-    var campusIconName: String
+    var iconName: String
     var city: String
     var state: String
     var country: String
     var primaryDiningHallIds: [String]
+    var active: Bool
+
+    var campusIconName: String { iconName }
 
     func supports(email: String) -> Bool {
         let lowered = email.lowercased()

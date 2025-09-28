@@ -100,14 +100,19 @@ struct ProfileView: View {
                         Text(school.displayName)
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Button("Switch") {
-                            appState.sessionPhase = .needsSchoolSelection
-                        }
-                        .font(.caption.weight(.bold))
                     }
                     Text("Email domains: \(school.allowedEmailDomains.map { "@\($0)" }.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let eligible = appState.currentUser?.eligibleSchoolIds, eligible.count > 1 {
+                        Text("You’re eligible for multiple campuses. Visit Settings → Campus to choose where you dash.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("Campus affiliation is tied to your verified email. Contact support if something looks off.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             } else {
                 Text("Select your school to unlock geofenced offers.")

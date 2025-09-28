@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import FirebaseFirestore
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -28,7 +27,8 @@ final class HomeViewModel: ObservableObject {
 
 
     private var searchTask: Task<Void, Never>?
-    private let db = FirebaseManager.shared.db
+    private let schoolService = SchoolService.shared
+    private let hallService = DiningHallService.shared
 
     private var cartItems: [CartItem] = []
     private var cartHallId: String?
@@ -37,15 +37,42 @@ final class HomeViewModel: ObservableObject {
     private let menuService = MenuService.shared
     private var cancellables: Set<AnyCancellable> = []
     private var ordersTask: Task<Void, Never>?
+    private var ignoreSearchChanges = false
 
     init() {
-        let allHalls = DiningHallDirectory.all
-        diningHalls = allHalls
-        selectedHall = sortedHalls.first
+        diningHalls = hallService.halls
+        selectedHall = diningHalls.first
+
         Task {
-            await bootstrapStatuses()
-            await loadRemoteDiningHalls()
+            do {
+                try await schoolService.ensureSchoolsLoaded()
+                try await hallService.ensureHallsLoaded()
+                await MainActor.run {
+                    self.diningHalls = self.hallService.halls
+                    if self.selectedHall == nil {
+                        self.selectedHall = self.diningHalls.first
+                    }
+                    if let school = self.activeSchoolFilter {
+                        self.hallResults = self.halls(for: school)
+                    }
+                }
+                await bootstrapStatuses()
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
+
+        hallService.$halls
+            .receive(on: RunLoop.main)
+            .sink { [weak self] halls in
+                self?.diningHalls = halls
+                if self?.selectedHall == nil {
+                    self?.selectedHall = halls.first
+                }
+            }
+            .store(in: &cancellables)
     }
 
     deinit {
@@ -66,16 +93,15 @@ final class HomeViewModel: ObservableObject {
         selectedWindow == .current ? ServiceWindowType.determineWindow(config: .default) : selectedWindow
     }
 
+    var hasResults: Bool {
+        !schoolResults.isEmpty || !hallResults.isEmpty
+    }
+
     func status(for hall: DiningHall) -> DiningHallStatus {
         if let cached = hallStatuses[hall.id] {
             return cached
         }
-        let defaultMessage: String
-        if hall.affiliation == .columbia && hall.dineOnCampusLocationId == nil {
-            defaultMessage = "Menu coming soon"
-        } else {
-            defaultMessage = hall.defaultOpenState ? "Open" : "Closed"
-        }
+        let defaultMessage = hall.defaultOpenState ? "Open" : "Closed"
         return DiningHallStatus(
             isOpen: hall.defaultOpenState,
             statusMessage: defaultMessage,
@@ -117,7 +143,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     func bootstrapStatuses() async {
-        for hall in diningHalls where hall.affiliation == .barnard {
+        for hall in diningHalls where !hall.menuIds.isEmpty {
             await loadMenuIfNeeded(for: hall)
         }
     }
@@ -245,214 +271,106 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Search
 
-    func search(query: String) {
+    func search(query: String, debounced: Bool = true) {
+        if ignoreSearchChanges { return }
         searchTask?.cancel()
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            Task { await clearSearch() }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            Task { await clearSearch(preserveFilter: false) }
             return
         }
 
         isSearching = true
-        searchTask = Task { [weak self] in
-            guard let strongSelf = self else { return }
-            // Simple client-side substring match for cached schools/halls first
-            let lower = query.lowercased()
-            // Query schools collection by displayName and name (prefix search)
+        activeSchoolFilter = nil
+
+        let task = Task { @MainActor [weak self] in
+            if debounced {
+                try? await Task.sleep(nanoseconds: 220_000_000)
+            }
+            guard let self else { return }
             do {
-                var fetchedSchools: [School] = []
-                    let schoolsSnap = try await strongSelf.db.collection("schools")
-                    .whereField("active", isEqualTo: true)
-                    .getDocuments()
-                for doc in schoolsSnap.documents {
-                    let d = doc.data()
-                    let school = School(
-                        id: doc.documentID,
-                        name: d["name"] as? String ?? "",
-                        displayName: d["displayName"] as? String ?? (d["name"] as? String ?? ""),
-                        allowedEmailDomains: d["allowedDomains"] as? [String] ?? [],
-                        campusIconName: d["campusIconName"] as? String ?? "building.columns",
-                        city: d["city"] as? String ?? "",
-                        state: d["state"] as? String ?? "",
-                        country: d["country"] as? String ?? "USA",
-                        primaryDiningHallIds: d["primaryDiningHallIds"] as? [String] ?? []
-                    )
-                    if school.displayName.lowercased().contains(lower) || school.name.lowercased().contains(lower) {
-                        fetchedSchools.append(school)
-                    }
+                try await self.schoolService.ensureSchoolsLoaded()
+                try await self.hallService.ensureHallsLoaded()
+
+                let lower = trimmed.lowercased()
+                let tokens = lower.split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init)
+
+                let schools = self.schoolService.schools.filter { school in
+                    let haystack = (school.displayName + " " + school.name).lowercased()
+                    return tokens.allSatisfy { haystack.contains($0) }
                 }
-                let hallMatches = await MainActor.run { strongSelf.filteredDiningHalls(matching: lower) }
-                await MainActor.run {
-                    strongSelf.schoolResults = fetchedSchools
-                    strongSelf.hallResults = hallMatches
-                    strongSelf.isSearching = false
-                    // don't change selectedHall here; let the UI drive selection when user taps
+
+                let halls = self.hallService.halls.filter { hall in
+                    self.matches(hall: hall, queryTokens: tokens)
                 }
+
+                self.schoolResults = schools
+                self.hallResults = halls
+                self.isSearching = false
             } catch {
-                await MainActor.run {
-                    strongSelf.errorMessage = error.localizedDescription
-                    strongSelf.isSearching = false
-                }
+                self.errorMessage = error.localizedDescription
+                self.isSearching = false
             }
         }
+        searchTask = task
     }
 
     func halls(for school: School) -> [DiningHall] {
-        let ids = Set(school.primaryDiningHallIds)
-        if !ids.isEmpty {
-            let matched = diningHalls.filter { ids.contains($0.id) }
-            if !matched.isEmpty { return matched }
-        }
-
-        // Fallback: try to infer by affiliation or campus name when primaryDiningHallIds are not provided
-        let loweredName = (school.displayName + " " + school.name + " " + school.id).lowercased()
-        if loweredName.contains("columbia") {
-            return diningHalls.filter { $0.affiliation == .columbia }
-        }
-        if loweredName.contains("barnard") {
-            return diningHalls.filter { $0.affiliation == .barnard }
-        }
-
-        // Final fallback: match diningHall.campus against school's displayName tokens
-        let tokens = loweredName.split(whereSeparator: { $0 == " " || $0 == "," }) .map(String.init)
-        return diningHalls.filter { hall in
-            let hallCampus = hall.campus.lowercased()
-            for t in tokens where !t.isEmpty {
-                if hallCampus.contains(t) { return true }
-            }
-            return false
-        }
+        diningHalls.filter { $0.schoolId == school.id }
     }
 
-    func clearSearch() async {
+    func school(for hall: DiningHall) -> School? {
+        schoolService.school(withId: hall.schoolId)
+    }
+
+    var visibleHalls: [DiningHall] {
+        if let filter = activeSchoolFilter {
+            return halls(for: filter)
+        }
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hallResults.isEmpty {
+            return hallResults
+        }
+        return diningHalls
+    }
+
+    func activateSchool(_ school: School) {
+        activeSchoolFilter = school
+        let hallsForSchool = halls(for: school)
+        hallResults = hallsForSchool
+        if let first = hallsForSchool.first {
+            selectedHall = first
+        }
+        isSearching = false
+    }
+
+    func selectHall(_ hall: DiningHall) {
+        selectedHall = hall
+        activeSchoolFilter = school(for: hall)
+    }
+
+    func clearSearch(preserveFilter: Bool = false) async {
+        ignoreSearchChanges = true
         searchTask?.cancel()
-        await MainActor.run {
-            self.searchText = ""
-            self.schoolResults = []
-            self.hallResults = []
-            self.isSearching = false
+        searchText = ""
+        schoolResults = []
+        hallResults = []
+        isSearching = false
+        if !preserveFilter {
+            activeSchoolFilter = nil
         }
+        await Task.yield()
+        ignoreSearchChanges = false
     }
-
-    private func loadRemoteDiningHalls() async {
-        do {
-            let documents = try await fetchDiningHallDocuments()
-            guard !documents.isEmpty else { return }
-
-            let remoteHalls = documents.compactMap { makeDiningHall(from: $0) }
-            guard !remoteHalls.isEmpty else { return }
-
-            diningHalls = remoteHalls
-
-            if let currentSelection = selectedHall {
-                selectedHall = remoteHalls.first(where: { $0.id == currentSelection.id }) ?? sortedHalls.first
-            } else {
-                selectedHall = sortedHalls.first
-            }
-
-            if let school = activeSchoolFilter {
-                hallResults = halls(for: school)
-            } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                hallResults = filteredDiningHalls(matching: searchText.lowercased())
-            }
-
-            await bootstrapStatuses()
-        } catch {
-            // Keep the static directory fallback when Firestore fetch fails.
-        }
-    }
-
-    private func fetchDiningHallDocuments() async throws -> [QueryDocumentSnapshot] {
-        let candidates = ["dining_halls", "diningHalls"]
-        for name in candidates {
-            do {
-                let snapshot = try await db.collection(name).getDocuments()
-                if !snapshot.documents.isEmpty {
-                    return snapshot.documents
-                }
-            } catch {
-                if name == candidates.last {
-                    throw error
-                }
-            }
-        }
-        return []
-    }
-
-    private func makeDiningHall(from document: QueryDocumentSnapshot) -> DiningHall? {
-        let data = document.data()
-        let isActive = (data["active"] as? Bool) ?? true
-        guard isActive else { return nil }
-
-        let latitude = doubleValue(data["latitude"]) ?? 0
-        let longitude = doubleValue(data["longitude"]) ?? 0
-        let radius = doubleValue(data["geofenceRadius"]) ?? doubleValue(data["geofence_radius"]) ?? 75
-
-        let breakfast = doubleValue(data["price_breakfast"]) ?? doubleValue(data["priceBreakfast"]) ?? DiningHallPrice.standard.breakfast
-        let lunch = doubleValue(data["price_lunch"]) ?? doubleValue(data["priceLunch"]) ?? DiningHallPrice.standard.lunch
-        let dinner = doubleValue(data["price_dinner"]) ?? doubleValue(data["priceDinner"]) ?? DiningHallPrice.standard.dinner
-
-        let affiliationValue = (data["affiliation"] as? String) ?? (data["campus"] as? String) ?? "columbia"
-        let loweredAffiliation = affiliationValue.lowercased()
-        let affiliation = DiningHallAffiliation(rawValue: loweredAffiliation)
-            ?? (loweredAffiliation.contains("barnard") ? .barnard : .columbia)
-
-        let defaultOpenState = (data["defaultOpenState"] as? Bool)
-            ?? (data["default_open_state"] as? Bool)
-            ?? true
-
-        return DiningHall(
-            id: document.documentID,
-            name: data["name"] as? String ?? document.documentID,
-            campus: data["campus"] as? String ?? "",
-            latitude: latitude,
-            longitude: longitude,
-            active: isActive,
-            price: DiningHallPrice(breakfast: breakfast, lunch: lunch, dinner: dinner),
-            geofenceRadius: radius,
-            address: data["address"] as? String ?? "",
-            dineOnCampusSiteId: data["dineOnCampusSiteId"] as? String ?? data["dine_on_campus_site_id"] as? String,
-            dineOnCampusLocationId: data["dineOnCampusLocationId"] as? String ?? data["dine_on_campus_location_id"] as? String,
-            affiliation: affiliation,
-            defaultOpenState: defaultOpenState
-        )
-    }
-
-    private func filteredDiningHalls(matching lowercasedQuery: String) -> [DiningHall] {
-        let trimmed = lowercasedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-
-        let tokens = trimmed.split(whereSeparator: { $0 == " " || $0 == "," }).map { String($0) }
-
-        return diningHalls.filter { hall in
-            let fields = [hall.name, hall.campus, hall.address].map { $0.lowercased() }
-            if fields.contains(where: { $0.contains(trimmed) }) {
-                return true
-            }
-            guard !tokens.isEmpty else { return false }
-            return fields.contains { field in
-                tokens.contains(where: { token in field.contains(token.lowercased()) })
-            }
-        }
-    }
-
-    private func doubleValue(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber {
-            return number.doubleValue
-        }
-        if let string = value as? String {
-            return Double(string)
-        }
-        return nil
+    private func matches(hall: DiningHall, queryTokens: [String]) -> Bool {
+        if queryTokens.isEmpty { return false }
+        let haystack = [hall.name, hall.campus, hall.address, hall.city, hall.state]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+        return queryTokens.allSatisfy { haystack.contains($0) }
     }
 
     private func bucket(for hall: DiningHall) -> Int {
-        let isOpen = hallIsOpen(hall)
-        switch (hall.affiliation, isOpen) {
-        case (.columbia, true): return 0
-        case (.barnard, true): return 1
-        case (.columbia, false): return 2
-        case (.barnard, false): return 3
-        }
+        hallIsOpen(hall) ? 0 : 1
     }
 
     private func price(for hall: DiningHall, window: ServiceWindowType, soloFallback: Bool) -> Double {

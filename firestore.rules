@@ -121,12 +121,12 @@ service cloud.firestore {
           // Helper functions
           function isCreatingAllowedFields(data) {
             // Protected fields that must not be client-set:
-            return !(data.keys().hasAny(['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId']));
+            return !(data.keys().hasAny(['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId','eligibleSchoolIds']));
           }
 
           function isUpdatingAllowedFields(old, new) {
             // Disallow changes to protected fields in updates
-            let protectedKeys = ['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId'];
+            let protectedKeys = ['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId','eligibleSchoolIds'];
             return !(new.keys().hasAny(protectedKeys));
           }
 

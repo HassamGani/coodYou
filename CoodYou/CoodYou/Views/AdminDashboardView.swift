@@ -187,29 +187,8 @@ struct AdminDashboardView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let snapshot = try await FirebaseManager.shared.db.collection("dining_halls").getDocuments()
-            let halls = snapshot.documents.map { doc -> DiningHall in
-                let data = doc.data()
-                return DiningHall(
-                    id: doc.documentID,
-                    name: data["name"] as? String ?? "",
-                    campus: data["campus"] as? String ?? "",
-                    latitude: data["latitude"] as? Double ?? 0,
-                    longitude: data["longitude"] as? Double ?? 0,
-                    active: data["active"] as? Bool ?? false,
-                    price: DiningHallPrice(
-                        breakfast: data["price_breakfast"] as? Double ?? 0,
-                        lunch: data["price_lunch"] as? Double ?? 0,
-                        dinner: data["price_dinner"] as? Double ?? 0
-                    ),
-                    geofenceRadius: data["geofenceRadius"] as? Double ?? 75,
-                    address: data["address"] as? String ?? "",
-                    dineOnCampusSiteId: data["dineOnCampusSiteId"] as? String,
-                    dineOnCampusLocationId: data["dineOnCampusLocationId"] as? String,
-                    affiliation: DiningHallAffiliation(rawValue: data["affiliation"] as? String ?? DiningHallAffiliation.columbia.rawValue) ?? .columbia,
-                    defaultOpenState: data["defaultOpenState"] as? Bool ?? true
-                )
-            }
+            try await DiningHallService.shared.ensureHallsLoaded()
+            let halls = DiningHallService.shared.halls
             await MainActor.run {
                 self.halls = halls
                 if self.selectedHall == nil {

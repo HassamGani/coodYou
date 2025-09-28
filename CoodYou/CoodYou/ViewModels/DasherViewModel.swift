@@ -61,32 +61,8 @@ final class DasherViewModel: ObservableObject {
 
     private func loadHalls() async {
         do {
-            let snapshot = try await manager.db.collection("dining_halls").getDocuments()
-            var lookup: [String: DiningHall] = [:]
-            for document in snapshot.documents {
-                let data = document.data()
-                let hall = DiningHall(
-                    id: document.documentID,
-                    name: data["name"] as? String ?? "",
-                    campus: data["campus"] as? String ?? "",
-                    latitude: data["latitude"] as? Double ?? 0,
-                    longitude: data["longitude"] as? Double ?? 0,
-                    active: data["active"] as? Bool ?? false,
-                    price: DiningHallPrice(
-                        breakfast: data["price_breakfast"] as? Double ?? 0,
-                        lunch: data["price_lunch"] as? Double ?? 0,
-                        dinner: data["price_dinner"] as? Double ?? 0
-                    ),
-                    geofenceRadius: data["geofenceRadius"] as? Double ?? 75,
-                    address: data["address"] as? String ?? "",
-                    dineOnCampusSiteId: data["dineOnCampusSiteId"] as? String,
-                    dineOnCampusLocationId: data["dineOnCampusLocationId"] as? String,
-                    affiliation: DiningHallAffiliation(rawValue: data["affiliation"] as? String ?? DiningHallAffiliation.columbia.rawValue) ?? .columbia,
-                    defaultOpenState: data["defaultOpenState"] as? Bool ?? true
-                )
-                lookup[hall.id] = hall
-            }
-            hallLookup = lookup
+            try await DiningHallService.shared.ensureHallsLoaded()
+            hallLookup = Dictionary(uniqueKeysWithValues: DiningHallService.shared.halls.map { ($0.id, $0) })
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -78,7 +78,7 @@ private struct SchoolDocument: Codable {
     var name: String
     var displayName: String
     var allowedDomains: [String]
-    var campusIconName: String?
+    var iconName: String?
     var city: String
     var state: String
     var country: String?
@@ -91,11 +91,12 @@ private struct SchoolDocument: Codable {
             name: name,
             displayName: displayName,
             allowedEmailDomains: allowedDomains,
-            campusIconName: campusIconName ?? "building.columns",
+            iconName: iconName ?? "building.columns",
             city: city,
             state: state,
             country: country ?? "USA",
-            primaryDiningHallIds: primaryDiningHallIds ?? []
+            primaryDiningHallIds: primaryDiningHallIds ?? [],
+            active: active ?? true
         )
     }
 }

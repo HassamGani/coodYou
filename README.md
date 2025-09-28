@@ -62,6 +62,13 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 - **Micro-interactions**: the primary CTA uses `PrimaryButtonStyle` for press scaling, spinner, and success morph; `CheckmarkSuccess` animates a trimmed circle + SF Symbol checkmark (no external Lottie dependency) for the 1.5s success dwell before navigation.
 - **System feedback**: inline errors live under their field, `ToastBanner` surfaces network or linking issues, and resend countdown disables the code button for 30s.
 
+### Home map experience
+
+- `HomeView` now opens to a full-screen MapKit canvas with an Apple Maps–style floating search bar. The screen stays map-first; no cards appear until the user searches or taps a dining hall.
+- `SchoolService` and the new `DiningHallService` hydrate the `/schools` and `/dining_halls` collections, so search is an instant, on-device filter that groups results by school and hall.
+- Selecting a school focuses the visible pins for that campus; selecting a hall recenters the map, highlights the custom marker, and presents `DiningHallDetailView` in a sheet for menus and checkout.
+- Active orders surface as a compact floating pill; tapping it opens the existing handoff flow without cluttering the primary map UI.
+
 ### Integration guide
 
 1. Swap `AuthShellView(service:)` injection in `LandingView` with a production `AuthFlowService` implementation that calls your backend for passwordless links/codes.
@@ -70,6 +77,7 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 4. Provide legal content by replacing `auth.legal.placeholder` strings or presenting rich Markdown within `LegalSheetView`.
 5. Add `message`/`mailto` URL schemes to `LSApplicationQueriesSchemes` if you keep the “Open email app” shortcut.
 6. Update UI tests if you localise the displayed strings (see key list below) and keep the accessibility identifiers (`auth.emailField`, `auth.primaryButton`, `auth.inlineError`).
+7. Seed `/schools` and `/dining_halls` in Firestore; `SchoolService` and `DiningHallService` expect the schema outlined in this README and drive both authentication checks and the map experience.
 
 ### Testing
 
