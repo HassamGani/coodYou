@@ -57,7 +57,7 @@ struct OrderRow: View {
                     .font(.subheadline)
                 Text(order.status.rawValue.capitalized)
                     .font(.caption)
-                    .foregroundStyle(order.status.isTerminal ? .secondary : .accentColor)
+                    .foregroundStyle(order.isTerminal ? .secondary : Color.accentColor)
             }
         }
         .padding(.vertical, 8)

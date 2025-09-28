@@ -16,6 +16,21 @@ service cloud.firestore {
                     && isUpdatingAllowedFields(resource.data, request.resource.data);
     }
 
+    // Payment methods stored under each user's document (users/{userId}/paymentMethods/{pmId})
+    match /users/{userId}/paymentMethods/{pmId} {
+      // Owner may read their saved payment methods
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Creation only allowed by the authenticated owner and must include a userId field matching the owner
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.userId == userId
+                    && isValidPaymentCreate(request.resource.data);
+
+      // Owner can update or delete their own methods
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Orders: buyer can create an order. Reads and updates limited to buyer, assigned dasher, or admin.
     match /orders/{orderId} {
       allow create: if request.auth != null

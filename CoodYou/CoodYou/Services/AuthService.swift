@@ -146,8 +146,18 @@ final class AuthService {
     }
 
     func fetchProfile(uid: String) async throws -> UserProfile {
-        let snapshot = try await manager.db.collection("users").document(uid).getDocument()
-        return try snapshot.data(as: UserProfile.self)
+        #if DEBUG
+        print("[DEBUG] fetchProfile: attempting to read users/\(uid). current auth uid=", manager.auth.currentUser?.uid as Any)
+        #endif
+        do {
+            let snapshot = try await manager.db.collection("users").document(uid).getDocument()
+            return try snapshot.data(as: UserProfile.self)
+        } catch {
+            #if DEBUG
+            print("[DEBUG] fetchProfile failed for users/\(uid): \(error)")
+            #endif
+            throw error
+        }
     }
 
     func updatePushToken(_ token: String, for uid: String) async throws {
@@ -240,8 +250,11 @@ final class AuthService {
                    phoneNumber: user.phoneNumber,
                    schoolId: resolvedSchoolId,
                    canDash: canDash)
-        // Save only client-manageable fields; server function will set canDash/schoolId authoritatively.
-        try await saveClientProfile(profile)
+    // Save only client-manageable fields; server function will set canDash/schoolId authoritatively.
+#if DEBUG
+    print("[DEBUG] Current auth uid before saving profile:", manager.auth.currentUser?.uid as Any)
+#endif
+    try await saveClientProfile(profile)
         return profile
     }
 
@@ -278,6 +291,8 @@ final class AuthService {
     /// completedRuns, stripeConnected, schoolId) are omitted so Firestore rules do not reject the write.
     private func saveClientProfile(_ profile: UserProfile) async throws {
         let document = manager.db.collection("users").document(profile.id)
+        // Convert Swift-only types (enums, Date) to Firestore-friendly representations.
+        let paymentPrefs: [String] = profile.paymentProviderPreferences.map { $0.rawValue }
         let payload: [String: Any] = [
             "id": profile.id,
             "firstName": profile.firstName,
@@ -286,15 +301,54 @@ final class AuthService {
             "phoneNumber": profile.phoneNumber as Any,
             "pushToken": profile.pushToken as Any,
             "defaultPaymentMethodId": profile.defaultPaymentMethodId as Any,
-            "paymentProviderPreferences": profile.paymentProviderPreferences,
+            // store enum raw values for compatibility with Firestore setData
+            "paymentProviderPreferences": paymentPrefs,
             "settings": [
                 "pushNotificationsEnabled": profile.settings.pushNotificationsEnabled,
                 "locationSharingEnabled": profile.settings.locationSharingEnabled,
                 "autoAcceptDashRuns": profile.settings.autoAcceptDashRuns,
                 "applePayDoubleConfirmation": profile.settings.applePayDoubleConfirmation
             ],
-            "createdAt": profile.createdAt
+            // represent date as Firestore Timestamp to avoid ambiguity
+            "createdAt": Timestamp(date: profile.createdAt)
         ]
-        try await document.setData(payload, merge: true)
+        #if DEBUG
+            debugInspectPayload(payload)
+            print("[DEBUG] About to write users/\(profile.id) payload keys=\(Array(payload.keys)) auth.uid=\(manager.auth.currentUser?.uid as Any)")
+            #endif
+            do {
+                try await document.setData(payload, merge: true)
+            } catch {
+                #if DEBUG
+                print("[DEBUG] Failed to write users/\(profile.id): \(error) \n payload=\(payload)")
+                #endif
+                throw error
+            }
     }
 }
+
+#if DEBUG
+fileprivate func debugInspectPayload(_ payload: [String: Any]) {
+    // Walk the payload and print any values that are not JSON/Firestore friendly
+    func inspect(_ value: Any, path: String) {
+        if value is String || value is Int || value is Double || value is Bool || value is NSNull {
+            return
+        }
+        if value is Date || value is Timestamp { return }
+        if let arr = value as? [Any] {
+            for (i, v) in arr.enumerated() { inspect(v, path: "\(path)[\(i)]") }
+            return
+        }
+        if let dict = value as? [String: Any] {
+            for (k, v) in dict { inspect(v, path: path + "." + k) }
+            return
+        }
+        // If we get here it's likely an unsupported Swift-only type
+        print("[DEBUG] Unsupported payload type at \(path): \(type(of: value)) -> \(value)")
+    }
+
+    for (k, v) in payload {
+        inspect(v, path: k)
+    }
+}
+#endif

@@ -46,5 +46,3 @@ final class OrdersViewModel: ObservableObject {
         listener?.remove()
     }
 }
-    }
-}
