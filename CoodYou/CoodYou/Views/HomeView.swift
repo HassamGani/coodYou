@@ -24,8 +24,10 @@ struct HomeView: View {
                                         showingHandoff: $showingHandoff)
                             .padding(.horizontal, 20)
                     }
-                    hallDirectoryCard
-                        .padding(.horizontal, 20)
+                    if let activeSchool = viewModel.activeSchoolFilter {
+                        hallDirectoryCard(for: activeSchool)
+                            .padding(.horizontal, 20)
+                    }
                     Spacer()
                 }
                 .padding(.top, 16)
@@ -151,6 +153,7 @@ struct HomeView: View {
                                 // Activate school filter and populate halls for that school
                                 viewModel.activeSchoolFilter = school
                                 viewModel.hallResults = viewModel.halls(for: school)
+                                appState.selectedSchool = school
                                 // clear only search text & schools but keep hallResults visible
                                 viewModel.searchText = ""
                                 viewModel.schoolResults = []
@@ -239,11 +242,12 @@ struct HomeView: View {
         }
     }
 
-    private var hallDirectoryCard: some View {
+    private func hallDirectoryCard(for school: School) -> some View {
+        let halls = viewModel.halls(for: school)
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Dining halls")
+                    Text("Dining halls at \(school.displayName)")
                         .font(.title3.weight(.semibold))
                     Text("Tap a hall to explore the live menu and start an order.")
                         .font(.footnote)
@@ -252,10 +256,21 @@ struct HomeView: View {
                 Spacer()
             }
 
-            if let school = viewModel.activeSchoolFilter {
+            if halls.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("No dining halls yet")
+                        .font(.headline)
+                    Text("We couldn't find dining halls for \(school.displayName) just yet. Please check back soon.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxHeight: 120)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+            } else {
                 ScrollView {
                     LazyVStack(spacing: 14) {
-                        ForEach(viewModel.halls(for: school)) { hall in
+                        ForEach(halls) { hall in
                             Button {
                                 viewModel.selectedHall = hall
                                 detailHall = hall
@@ -267,18 +282,6 @@ struct HomeView: View {
                     }
                 }
                 .frame(maxHeight: 380)
-            } else {
-                // Instructional prompt when no school selected
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Find your university")
-                        .font(.headline)
-                    Text("Search for a university above to view its dining halls.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxHeight: 120)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
             }
         }
         .padding(20)

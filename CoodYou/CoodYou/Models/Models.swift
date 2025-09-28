@@ -106,6 +106,11 @@ struct DiningHallPrice: Codable, Hashable {
     var dinner: Double
 }
 
+extension DiningHallPrice {
+    /// Default on-campus buffet pricing used when Firestore documents omit explicit amounts.
+    static let standard = DiningHallPrice(breakfast: 13.0, lunch: 17.5, dinner: 19.5)
+}
+
 struct Order: Identifiable, Codable {
     var id: String
     var userId: String

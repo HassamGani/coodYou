@@ -246,7 +246,3 @@ struct DiningHallDirectory {
         )
     ]
 }
-
-private extension DiningHallPrice {
-    static let standard = DiningHallPrice(breakfast: 13.0, lunch: 17.5, dinner: 19.5)
-}
