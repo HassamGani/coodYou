@@ -1,9 +1,9 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import { z } from "zod";
-import "./onUserCreate";
 
 admin.initializeApp();
+import "./onUserCreate";
 
 const db = admin.firestore();
 const runtimeOpts: functions.RuntimeOptions = {
@@ -414,6 +414,312 @@ export const markDelivered = functions
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     });
+
+    return { ok: true };
+  });
+
+export const createDeliveryRequest = functions
+  .runWith(runtimeOpts)
+  .https.onCall(async (data, context) => {
+    const uid = assertAuth(context);
+    const payload = z
+      .object({
+        orderId: z.string(),
+        hallId: z.string(),
+        windowType: z.enum(["breakfast", "lunch", "dinner"]),
+        items: z.array(z.string()),
+        instructions: z.string().optional(),
+        meetPoint: z.object({
+          latitude: z.number(),
+          longitude: z.number(),
+          description: z.string(),
+        }),
+      })
+      .parse(data);
+
+    const orderRef = db.collection("orders").doc(payload.orderId);
+    const orderDoc = await orderRef.get();
+    
+    if (!orderDoc.exists) {
+      throw new functions.https.HttpsError("not-found", "Order not found");
+    }
+    
+    const orderData = orderDoc.data()!;
+    if (orderData.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied", 
+        "Cannot create delivery request for another user's order"
+      );
+    }
+
+    // Find available dashers for this hall
+    const availableDashersSnap = await db
+      .collection("dasherAvailability")
+      .where("isOnline", "==", true)
+      .get();
+
+    const candidateDasherIds = availableDashersSnap.docs
+      .map(doc => doc.id)
+      .filter(dasherId => dasherId !== uid); // Don't include the buyer
+
+    if (candidateDasherIds.length === 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "No dashers currently available"
+      );
+    }
+
+    const requestRef = db.collection("deliveryRequests").doc();
+    const expirationTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await requestRef.set({
+      id: requestRef.id,
+      orderId: payload.orderId,
+      buyerId: uid,
+      hallId: payload.hallId,
+      windowType: payload.windowType,
+      status: "open",
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expirationTime),
+      items: payload.items,
+      instructions: payload.instructions || "",
+      meetPoint: payload.meetPoint,
+      assignedDasherId: null,
+      candidateDasherIds,
+      createdBy: uid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Update order with delivery request ID
+    await orderRef.update({
+      deliveryRequestId: requestRef.id,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // TODO: Send push notifications to candidate dashers
+
+    return { requestId: requestRef.id, candidateCount: candidateDasherIds.length };
+  });
+
+export const respondToDeliveryRequest = functions
+  .runWith(runtimeOpts)
+  .https.onCall(async (data, context) => {
+    const uid = assertAuth(context);
+    const payload = z
+      .object({
+        requestId: z.string(),
+        response: z.enum(["accept", "decline"]),
+      })
+      .parse(data);
+
+    const requestRef = db.collection("deliveryRequests").doc(payload.requestId);
+
+    await db.runTransaction(async (transaction) => {
+      const requestDoc = await transaction.get(requestRef);
+      
+      if (!requestDoc.exists) {
+        throw new functions.https.HttpsError("not-found", "Delivery request not found");
+      }
+
+      const requestData = requestDoc.data()!;
+      
+      if (!requestData.candidateDasherIds.includes(uid)) {
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "Not eligible to respond to this request"
+        );
+      }
+
+      if (requestData.status !== "open") {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Request is no longer open"
+        );
+      }
+
+      if (payload.response === "accept") {
+        // Accept the request
+        transaction.update(requestRef, {
+          status: "assigned",
+          assignedDasherId: uid,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Update the associated order
+        const orderRef = db.collection("orders").doc(requestData.orderId);
+        transaction.update(orderRef, {
+          dasherId: uid,
+          status: "assigned",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Decline - remove from candidate list
+        const updatedCandidates = requestData.candidateDasherIds.filter(
+          (id: string) => id !== uid
+        );
+        
+        transaction.update(requestRef, {
+          candidateDasherIds: updatedCandidates,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // If no candidates left, mark as expired
+        if (updatedCandidates.length === 0) {
+          transaction.update(requestRef, {
+            status: "expired",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    });
+
+    return { ok: true };
+  });
+
+export const completeDeliveryRequest = functions
+  .runWith(runtimeOpts)
+  .https.onCall(async (data, context) => {
+    const uid = assertAuth(context);
+    const payload = z
+      .object({
+        requestId: z.string(),
+        pin: z.string().min(4),
+      })
+      .parse(data);
+
+    const requestRef = db.collection("deliveryRequests").doc(payload.requestId);
+    
+    await db.runTransaction(async (transaction) => {
+      const requestDoc = await transaction.get(requestRef);
+      
+      if (!requestDoc.exists) {
+        throw new functions.https.HttpsError("not-found", "Delivery request not found");
+      }
+
+      const requestData = requestDoc.data()!;
+      
+      if (requestData.assignedDasherId !== uid) {
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "Not assigned to this delivery request"
+        );
+      }
+
+      // Verify PIN with order
+      const orderRef = db.collection("orders").doc(requestData.orderId);
+      const orderDoc = await transaction.get(orderRef);
+      
+      if (!orderDoc.exists) {
+        throw new functions.https.HttpsError("not-found", "Associated order not found");
+      }
+
+      const orderData = orderDoc.data()!;
+      if (orderData.pinCode !== payload.pin) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Invalid PIN code"
+        );
+      }
+
+      // Complete the delivery
+      transaction.update(requestRef, {
+        status: "completed",
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      transaction.update(orderRef, {
+        status: "delivered",
+        deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { ok: true };
+  });
+
+export const cleanupExpiredRequests = functions.pubsub
+  .schedule("every 5 minutes")
+  .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const expiredRequestsSnap = await db
+      .collection("deliveryRequests")
+      .where("status", "==", "open")
+      .where("expiresAt", "<=", now)
+      .get();
+
+    const batch = db.batch();
+    expiredRequestsSnap.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        status: "expired",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    await batch.commit();
+    console.log(`Expired ${expiredRequestsSnap.size} delivery requests`);
+  });
+
+export const requestSetSchool = functions
+  .runWith(runtimeOpts)
+  .https.onCall(async (data, context) => {
+    const uid = assertAuth(context);
+    const payload = z
+      .object({
+        schoolId: z.string(),
+        verificationData: z.string().optional(),
+      })
+      .parse(data);
+
+    // Verify the school exists
+    const schoolDoc = await db.collection("schools").doc(payload.schoolId).get();
+    if (!schoolDoc.exists) {
+      throw new functions.https.HttpsError("not-found", "School not found");
+    }
+
+    const userRef = db.collection("users").doc(uid);
+    await userRef.update({
+      schoolId: payload.schoolId,
+      canDash: true,
+      rolePreferences: ["buyer", "dasher"],
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Set custom claims for authorization
+    await admin.auth().setCustomUserClaims(uid, {
+      canDash: true,
+      schoolId: payload.schoolId,
+    });
+
+    return { ok: true };
+  });
+
+export const updateDasherAvailability = functions
+  .runWith(runtimeOpts)
+  .https.onCall(async (data, context) => {
+    const uid = assertAuth(context);
+    const payload = z
+      .object({
+        dasherId: z.string(),
+        isOnline: z.boolean(),
+      })
+      .parse(data);
+
+    if (payload.dasherId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Dashers can only update their own availability"
+      );
+    }
+
+    await db.collection("dasherAvailability").doc(uid).set(
+      {
+        id: uid,
+        isOnline: payload.isOnline,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 
     return { ok: true };
   });

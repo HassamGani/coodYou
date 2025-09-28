@@ -40,40 +40,40 @@ admin.initializeApp();
 const db = admin.firestore();
 exports.requestSetSchool = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+        throw new functions.https.HttpsError("unauthenticated", "Authentication required");
     }
     const uid = context.auth.uid;
     const schoolId = data.schoolId;
     if (!schoolId) {
-        throw new functions.https.HttpsError('invalid-argument', 'schoolId is required');
+        throw new functions.https.HttpsError("invalid-argument", "schoolId is required");
     }
-    const userDocRef = db.collection('users').doc(uid);
+    const userDocRef = db.collection("users").doc(uid);
     const userSnap = await userDocRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
     const eligible = userData?.eligibleSchoolIds;
     if (eligible && eligible.length > 0) {
         if (!eligible.includes(schoolId)) {
-            throw new functions.https.HttpsError('permission-denied', 'User not eligible for requested school');
+            throw new functions.https.HttpsError("permission-denied", "User not eligible for requested school");
         }
         await userDocRef.set({ schoolId }, { merge: true });
         return { success: true };
     }
     const userEmail = context.auth.token.email;
     if (!userEmail) {
-        throw new functions.https.HttpsError('failed-precondition', 'No email available for user');
+        throw new functions.https.HttpsError("failed-precondition", "No email available for user");
     }
-    const domain = userEmail.split('@').pop()?.toLowerCase();
+    const domain = userEmail.split("@").pop()?.toLowerCase();
     if (!domain) {
-        throw new functions.https.HttpsError('invalid-argument', 'Invalid email');
+        throw new functions.https.HttpsError("invalid-argument", "Invalid email");
     }
-    const schoolSnap = await db.collection('schools').doc(schoolId).get();
+    const schoolSnap = await db.collection("schools").doc(schoolId).get();
     if (!schoolSnap.exists) {
-        throw new functions.https.HttpsError('not-found', 'School not found');
+        throw new functions.https.HttpsError("not-found", "School not found");
     }
     const school = schoolSnap.data();
     const allowed = school?.allowedEmailDomains || [];
-    if (!allowed.map(d => d.toLowerCase()).includes(domain)) {
-        throw new functions.https.HttpsError('permission-denied', 'Email domain not allowed for school');
+    if (!allowed.map((d) => d.toLowerCase()).includes(domain)) {
+        throw new functions.https.HttpsError("permission-denied", "Email domain not allowed for school");
     }
     await userDocRef.set({ schoolId }, { merge: true });
     return { success: true };

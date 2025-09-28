@@ -1,8 +1,9 @@
 {
   "name": "campusdash-functions",
   "version": "0.1.0",
+  "main": "lib/index.js",
   "engines": {
-    "node": "^18"
+    "node": "18"
   },
   "scripts": {
     "build": "tsc",

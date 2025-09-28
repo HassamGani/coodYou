@@ -57,6 +57,13 @@ final class OrderService: ObservableObject {
         }
     }
 
+    func attachDeliveryRequest(orderId: String, requestId: String) async throws {
+        let document = manager.db.collection("orders").document(orderId)
+        try await document.updateData([
+            "deliveryRequestId": requestId
+        ])
+    }
+
     func subscribeToOrders(uid: String) -> AsyncThrowingStream<[Order], Error> {
         let query = manager.db.collection("orders").whereField("userId", isEqualTo: uid)
         return AsyncThrowingStream { continuation in

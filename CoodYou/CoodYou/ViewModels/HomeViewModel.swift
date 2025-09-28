@@ -30,10 +30,12 @@ final class HomeViewModel: ObservableObject {
     private let schoolService = SchoolService.shared
     private let hallService = DiningHallService.shared
 
-    private var cartItems: [CartItem] = []
+    @Published private(set) var cartItems: [CartItem] = []
     private var cartHallId: String?
+    @Published private(set) var cartNotes: [String: String] = [:]
 
     private let orderService = OrderService.shared
+    private let deliveryService = DeliveryRequestService.shared
     private let menuService = MenuService.shared
     private var cancellables: Set<AnyCancellable> = []
     private var ordersTask: Task<Void, Never>?
@@ -153,22 +155,48 @@ final class HomeViewModel: ObservableObject {
 
     func addToCart(item: DiningHallMenu.MenuItem, hall: DiningHall) {
         if cartHallId != hall.id {
-            cartItems.removeAll()
+            cartItems = []
             cartHallId = hall.id
         }
-        cartItems.append(CartItem(hallId: hall.id, name: item.name))
+        var updated = cartItems
+        updated.append(CartItem(hallId: hall.id, name: item.name))
+        cartItems = updated
     }
 
     func removeFromCart(_ item: CartItem) {
-        cartItems.removeAll { $0.id == item.id }
+        var updated = cartItems
+        updated.removeAll { $0.id == item.id }
+        cartItems = updated
         if cartItems.isEmpty {
             cartHallId = nil
         }
     }
 
+    func removeLineItem(_ item: OrderLineItem, from hall: DiningHall) {
+        var remaining = item.quantity
+        var updated = cartItems
+        updated.removeAll { cartItem in
+            guard cartItem.hallId == hall.id, cartItem.name == item.name, remaining > 0 else { return false }
+            remaining -= 1
+            return true
+        }
+        cartItems = updated
+        if cartItems(for: hall).isEmpty {
+            cartHallId = nil
+            var notes = cartNotes
+            notes[hall.id] = nil
+            cartNotes = notes
+        }
+    }
+
     func clearCart(for hall: DiningHall) {
-        cartItems.removeAll { $0.hallId == hall.id }
+        var updated = cartItems
+        updated.removeAll { $0.hallId == hall.id }
+        cartItems = updated
         if cartHallId == hall.id { cartHallId = nil }
+        var notes = cartNotes
+        notes[hall.id] = nil
+        cartNotes = notes
     }
 
     func hasCart(for hall: DiningHall) -> Bool {
@@ -214,11 +242,13 @@ final class HomeViewModel: ObservableObject {
 
     func createOrder(for user: UserProfile, isSoloFallback: Bool = false) async {
         guard let hall = selectedHall else { return }
+        let itemsForHall = cartItems(for: hall)
+        guard !itemsForHall.isEmpty else { return }
         isPlacingOrder = true
         defer { isPlacingOrder = false }
 
         let price = price(for: hall, window: displayWindow, soloFallback: isSoloFallback)
-        let order = Order(
+        var order = Order(
             id: UUID().uuidString,
             userId: user.id,
             hallId: hall.id,
@@ -232,11 +262,37 @@ final class HomeViewModel: ObservableObject {
             isSoloFallback: isSoloFallback
         )
 
+        let lineItems = aggregateLineItems(itemsForHall)
+        let instructions = cartNotes[hall.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        order.lineItems = lineItems
+        order.specialInstructions = instructions
+
         do {
+            isPlacingOrder = true
+            errorMessage = nil
+            defer { isPlacingOrder = false }
+
+            // Validate network connectivity
+            guard NetworkMonitor.shared.isConnected else {
+                throw OrderError.noInternetConnection
+            }
+
+            // Validate cart is not empty
+            guard !itemsForHall.isEmpty else {
+                throw OrderError.emptyCart
+            }
+
             try await orderService.createOrder(order)
+            let request = try await deliveryService.createDeliveryRequest(
+                for: order,
+                lineItems: lineItems,
+                instructions: instructions,
+                buyer: user
+            )
+            try? await orderService.attachDeliveryRequest(orderId: order.id, requestId: request.id)
             clearCart(for: hall)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = friendlyErrorMessage(for: error)
         }
     }
 
@@ -262,6 +318,36 @@ final class HomeViewModel: ObservableObject {
     func orderPitch(for hall: DiningHall?) -> String {
         guard let hall else { return "Pick a dining hall to see active dashers and live timing." }
         return "Dashers currently in \(hall.name) can grab your meal in minutes. Pair with a nearby student to split the price."
+    }
+
+    // MARK: - Error Handling
+    
+    private func friendlyErrorMessage(for error: Error) -> String {
+        if let orderError = error as? OrderError {
+            return orderError.localizedDescription
+        }
+        
+        // Handle Firebase function errors
+        let nsError = error as NSError
+        if nsError.domain == "FIRFunctionsErrorDomain" {
+            switch nsError.code {
+            case 7: // PERMISSION_DENIED
+                return "You don't have permission to perform this action."
+            case 5: // NOT_FOUND
+                return "The requested resource was not found."
+            case 9: // FAILED_PRECONDITION
+                if nsError.localizedDescription.contains("No dashers") {
+                    return "No dashers are currently available. Please try again later."
+                }
+                return nsError.localizedDescription
+            case 14: // UNAVAILABLE
+                return "Service temporarily unavailable. Please try again."
+            default:
+                return nsError.localizedDescription
+            }
+        }
+        
+        return error.localizedDescription
     }
 
     // MARK: - Search
@@ -405,5 +491,33 @@ final class HomeViewModel: ObservableObject {
             return basePrice * 0.75 + 0.50
         }
         return basePrice / 2 + 0.50
+    }
+
+    func cartNote(for hall: DiningHall) -> String {
+        cartNotes[hall.id] ?? ""
+    }
+
+    func updateCartNote(_ note: String, for hall: DiningHall) {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        var notes = cartNotes
+        if trimmed.isEmpty {
+            notes[hall.id] = nil
+        } else {
+            notes[hall.id] = note
+        }
+        cartNotes = notes
+    }
+
+    private func aggregateLineItems(_ items: [CartItem]) -> [OrderLineItem] {
+        let grouped = Dictionary(grouping: items, by: { $0.name })
+        return grouped.map { key, value in
+            OrderLineItem(name: key, quantity: value.count)
+        }.sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    func draftLineItems(for hall: DiningHall) -> [OrderLineItem] {
+        aggregateLineItems(cartItems(for: hall))
     }
 }

@@ -13,6 +13,8 @@ struct UserProfile: Identifiable, Codable {
     var stripeConnected: Bool
     var pushToken: String?
     var schoolId: String?
+    // Wallet balance in cents (buyers) maintained by server/cloud functions
+    var walletBalanceCents: Int = 0
     // Populated by server-side auth trigger when applicable. Clients may read this to present
     // multi-school eligibility for a user (e.g. cross-affiliated students/staff).
     var eligibleSchoolIds: [String]?
@@ -120,6 +122,9 @@ struct Order: Identifiable, Codable {
     var meetPoint: MeetPoint?
     var pinCode: String
     var isSoloFallback: Bool
+    var lineItems: [OrderLineItem]?
+    var specialInstructions: String?
+    var deliveryRequestId: String?
 }
 
 enum OrderStatus: String, Codable {
@@ -234,6 +239,59 @@ struct NotificationPayload: Codable {
     var hallId: String
     var windowType: ServiceWindowType
     var runId: String?
+}
+
+struct OrderLineItem: Identifiable, Codable, Hashable {
+    var id: String
+    var name: String
+    var quantity: Int
+
+    init(id: String = UUID().uuidString, name: String, quantity: Int = 1) {
+        self.id = id
+        self.name = name
+        self.quantity = quantity
+    }
+}
+
+enum DeliveryRequestStatus: String, Codable {
+    case pending
+    case notifyingDashers
+    case awaitingAcceptance
+    case accepted
+    case matched
+    case cancelled
+    case expired
+}
+
+struct DeliveryRequest: Identifiable, Codable, Hashable {
+    var id: String
+    var orderId: String
+    var buyerId: String
+    var hallId: String
+    var windowType: ServiceWindowType
+    var status: DeliveryRequestStatus
+    var requestedAt: Date
+    var expiresAt: Date?
+    var items: [OrderLineItem]
+    var instructions: String?
+    var meetPoint: MeetPoint?
+    var assignedDasherId: String?
+    var candidateDasherIds: [String]?
+
+    var isActionable: Bool {
+        switch status {
+        case .pending, .notifyingDashers, .awaitingAcceptance:
+            return true
+        case .accepted, .matched, .cancelled, .expired:
+            return false
+        }
+    }
+}
+
+struct DasherAvailability: Identifiable, Codable {
+    var id: String
+    var isOnline: Bool
+    var updatedAt: Date
 }
 
 extension Order {

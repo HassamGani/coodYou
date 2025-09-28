@@ -21,6 +21,9 @@ struct DasherAssignmentsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 metrics
+                if !viewModel.pendingRequests.isEmpty {
+                    requestsSection
+                }
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 16) {
                         ForEach(viewModel.assignments) { run in
@@ -120,6 +123,36 @@ struct DasherAssignmentsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+    }
+
+    private var requestsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("New delivery requests")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.pendingRequests.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(spacing: 12) {
+                ForEach(viewModel.pendingRequests) { request in
+                    DeliveryRequestCard(
+                        request: request,
+                        hall: viewModel.hallLookup[request.hallId],
+                        acceptAction: {
+                            Task { await viewModel.accept(request: request) }
+                        },
+                        declineAction: {
+                            Task { await viewModel.decline(request: request) }
+                        }
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(.horizontal, 16)
     }
 
     private func primaryAction(for run: Run) -> RunAction? {
@@ -230,6 +263,94 @@ private struct RunCard: View {
         .padding(20)
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: Color.black.opacity(0.08), radius: 20, y: 12)
+    }
+}
+
+private struct DeliveryRequestCard: View {
+    let request: DeliveryRequest
+    let hall: DiningHall?
+    let acceptAction: () -> Void
+    let declineAction: () -> Void
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private var relativeRequestTime: String {
+        Self.relativeFormatter.localizedString(for: request.requestedAt, relativeTo: Date())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(hall?.name ?? "Dining hall")
+                        .font(.headline)
+                    Text("Requested \(relativeRequestTime)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Label("\(request.items.count) item(s)", systemImage: "bag")
+                    .font(.caption)
+                    .labelStyle(.titleAndIcon)
+                    .padding(8)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(request.items) { item in
+                    HStack {
+                        Text(item.name)
+                            .font(.subheadline)
+                        Spacer()
+                        if item.quantity > 1 {
+                            Text("×\(item.quantity)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if let instructions = request.instructions, !instructions.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Buyer notes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(instructions)
+                        .font(.footnote)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            HStack(spacing: 12) {
+                Button(action: declineAction) {
+                    Text("Decline")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color(.secondarySystemBackground))
+                        .foregroundColor(.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                Button(action: acceptAction) {
+                    Text("Accept request")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 8)
     }
 }
 

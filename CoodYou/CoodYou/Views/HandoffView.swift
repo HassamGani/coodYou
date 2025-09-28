@@ -24,6 +24,12 @@ struct HandoffView: View {
             VStack(spacing: 24) {
                 mapSection
                 statusSection
+                if let lineItems = order.lineItems, !lineItems.isEmpty {
+                    itemsSection(lineItems)
+                }
+                if let note = order.specialInstructions, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    instructionsSection(note)
+                }
                 if let meetPoint = order.meetPoint {
                     meetPointSection(meetPoint)
                 }
@@ -145,6 +151,40 @@ struct HandoffView: View {
             Label("Estimated payout: \(String(format: "$%.2f", Double(run.estimatedPayoutCents) / 100.0))", systemImage: "dollarsign.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func itemsSection(_ items: [OrderLineItem]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your items")
+                .font(.headline)
+            ForEach(items) { item in
+                HStack {
+                    Text(item.name)
+                        .font(.subheadline)
+                    Spacer()
+                    if item.quantity > 1 {
+                        Text("×\(item.quantity)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func instructionsSection(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Buyer notes")
+                .font(.headline)
+            Text(note)
+                .font(.subheadline)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

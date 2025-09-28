@@ -5,7 +5,7 @@ struct RootView: View {
     @State private var selectedTab: Tab = .order
 
     private enum Tab: Int {
-        case order, dash, wallet, profile
+        case order, dash, wallet, orders, profile
 
         var label: some View {
             switch self {
@@ -15,6 +15,8 @@ struct RootView: View {
                 return Label("Dash", systemImage: "bolt.car")
             case .wallet:
                 return Label("Wallet", systemImage: "wallet.pass.fill")
+            case .orders:
+                return Label("Orders", systemImage: "list.bullet")
             case .profile:
                 return Label("Profile", systemImage: "person.crop.circle")
             }
@@ -50,6 +52,10 @@ struct RootView: View {
                     NavigationStack { WalletView() }
                         .tabItem { Tab.wallet.label }
                         .tag(Tab.wallet)
+
+                    NavigationStack { OrdersView() }
+                        .tabItem { Tab.orders.label }
+                        .tag(Tab.orders)
 
                     NavigationStack { ProfileView() }
                         .tabItem { Tab.profile.label }

@@ -36,7 +36,8 @@ struct WalletView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Available balance")
                 .font(.headline)
-            Text(String(format: "$%.2f", totalPayout))
+            // Use server-maintained wallet balance when available
+            Text(String(format: "$%.2f", Double(appState.currentUser?.walletBalanceCents ?? Int(totalPayout * 100)) / 100.0))
                 .font(.system(size: 42, weight: .bold))
             HStack {
                 Label(String(format: "$%.2f pending", pendingPayout), systemImage: "clock")
@@ -115,17 +116,26 @@ struct WalletView: View {
     private func loadEarnings() async {
         guard let uid = appState.currentUser?.id else { return }
         do {
-            let snapshot = try await FirebaseManager.shared.db
-                .collection("payments")
-                .whereField("dasherId", isEqualTo: uid)
-                .order(by: "createdAt", descending: true)
-                .limit(to: 25)
-                .getDocuments()
-            let records = try snapshot.documents.map { try $0.data(as: PaymentRecord.self) }
-            await MainActor.run {
-                self.earnings = records
-                self.totalPayout = records.filter { $0.status == .captured }.reduce(0) { $0 + Double($1.payoutCents) / 100.0 }
-                self.pendingPayout = records.filter { $0.status == .pending }.reduce(0) { $0 + Double($1.payoutCents) / 100.0 }
+            // If the current user is a dasher (canDash), show payouts. Otherwise, leave earnings empty.
+            if appState.currentUser?.canDash == true {
+                let snapshot = try await FirebaseManager.shared.db
+                    .collection("payments")
+                    .whereField("dasherId", isEqualTo: uid)
+                    .order(by: "createdAt", descending: true)
+                    .limit(to: 25)
+                    .getDocuments()
+                let records = try snapshot.documents.map { try $0.data(as: PaymentRecord.self) }
+                await MainActor.run {
+                    self.earnings = records
+                    self.totalPayout = records.filter { $0.status == .captured }.reduce(0) { $0 + Double($1.payoutCents) / 100.0 }
+                    self.pendingPayout = records.filter { $0.status == .pending }.reduce(0) { $0 + Double($1.payoutCents) / 100.0 }
+                }
+            } else {
+                await MainActor.run {
+                    self.earnings = []
+                    self.totalPayout = 0
+                    self.pendingPayout = 0
+                }
             }
         } catch {
             await MainActor.run {
