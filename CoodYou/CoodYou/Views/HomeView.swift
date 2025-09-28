@@ -186,7 +186,6 @@ struct HomeView: View {
                                 ForEach(viewModel.schoolResults) { school in
                                     Button {
                                         viewModel.activateSchool(school)
-                                        Task { await viewModel.clearSearch(preserveFilter: true) }
                                     } label: {
                                         schoolRowResult(school: school)
                                     }

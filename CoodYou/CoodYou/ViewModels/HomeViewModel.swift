@@ -344,9 +344,14 @@ final class HomeViewModel: ObservableObject {
         schoolResults = []
         selectedHall = nil
         isSearching = false
+
         ignoreSearchChanges = true
+        searchTask?.cancel()
         searchText = ""
-        ignoreSearchChanges = false
+
+        DispatchQueue.main.async { [weak self] in
+            self?.ignoreSearchChanges = false
+        }
     }
 
     func selectHall(_ hall: DiningHall) {
