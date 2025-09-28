@@ -26,8 +26,15 @@ struct OrdersView: View {
             }
             .navigationTitle("Orders")
             .listStyle(.insetGrouped)
-            .task { await viewModel.start() }
-            .refreshable { await viewModel.start() }
+            .task {
+                await viewModel.start(uid: appState.currentUser?.id)
+            }
+            .refreshable {
+                await viewModel.start(uid: appState.currentUser?.id)
+            }
+            .onChange(of: appState.currentUser?.id) { _, newValue in
+                Task { await viewModel.start(uid: newValue) }
+            }
         }
     }
 }

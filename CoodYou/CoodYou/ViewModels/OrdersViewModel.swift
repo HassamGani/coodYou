@@ -1,4 +1,5 @@
 import Foundation
+import Foundation
 import FirebaseFirestore
 
 @MainActor
@@ -9,23 +10,26 @@ final class OrdersViewModel: ObservableObject {
 
     private var listener: ListenerRegistration?
 
-    func start() async {
-        guard let uid = AppState.shared.currentUser?.id else {
-            await MainActor.run { self.pastOrders = []; self.activeOrder = nil }
+    /// Start listening for orders for the given user id. Pass `nil` to clear listeners.
+    func start(uid: String?) async {
+        listener?.remove()
+        guard let uid = uid else {
+            self.pastOrders = []
+            self.activeOrder = nil
             return
         }
-        listener?.remove()
+
         let query = FirebaseManager.shared.db.collection("orders")
             .whereField("userId", isEqualTo: uid)
             .order(by: "createdAt", descending: true)
 
-        listener = query.addSnapshotListener { [weak self] snapshot, error in
+        listener = query.addSnapshotListener { [weak self] (snapshot: QuerySnapshot?, error: Error?) in
             guard let self = self else { return }
-            if let error {
+            if let error = error {
                 Task { @MainActor in self.errorMessage = error.localizedDescription }
                 return
             }
-            guard let snapshot else { return }
+            guard let snapshot = snapshot else { return }
             do {
                 let orders = try snapshot.documents.map { try $0.data(as: Order.self) }
                 Task { @MainActor in
@@ -40,5 +44,7 @@ final class OrdersViewModel: ObservableObject {
 
     deinit {
         listener?.remove()
+    }
+}
     }
 }
