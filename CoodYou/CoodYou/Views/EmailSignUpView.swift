@@ -2,12 +2,13 @@ import SwiftUI
 
 struct EmailSignUpView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var schoolService = SchoolService.shared
     @State private var firstName = ""
     @State private var lastName = ""
     @State private var email = ""
     @State private var password = ""
     @State private var phoneNumber = ""
-    @State private var selectedSchool: School = SchoolDirectory.columbia
+    @State private var selectedSchool: School?
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -66,6 +67,14 @@ struct EmailSignUpView: View {
             set: { errorMessage = $0?.value }
         )) { message in
             Alert(title: Text("Sign up"), message: Text(message.value), dismissButton: .default(Text("OK")))
+        }
+        .task {
+            try? await SchoolService.shared.ensureSchoolsLoaded()
+        }
+        .onChange(of: schoolService.schools) { schools in
+            if selectedSchool == nil {
+                selectedSchool = schools.first
+            }
         }
     }
     
@@ -168,7 +177,7 @@ struct EmailSignUpView: View {
             }
             
             Menu {
-                ForEach(SchoolDirectory.all) { school in
+                ForEach(schoolService.schools) { school in
                     Button {
                         selectedSchool = school
                     } label: {
@@ -184,15 +193,15 @@ struct EmailSignUpView: View {
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(selectedSchool.name)
+                        Text(selectedSchool?.name ?? "Select your school")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
-                        
-                        Text(selectedSchool.allowedEmailDomains.joined(separator: ", "))
+
+                        Text(selectedSchool?.allowedEmailDomains.joined(separator: ", ") ?? "")
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.white.opacity(0.7))
                     }
-                    
+
                     Spacer()
                     
                     Image(systemName: "chevron.down")
@@ -210,6 +219,7 @@ struct EmailSignUpView: View {
                         )
                 )
             }
+            .disabled(schoolService.schools.isEmpty)
         }
     }
     
@@ -223,9 +233,9 @@ struct EmailSignUpView: View {
         }
         .padding(.horizontal, 24)
     }
-    
+
     private var footerSection: some View {
-        Text("Only @columbia.edu or @barnard.edu addresses are accepted during the pilot.")
+        Text(footerText)
             .font(.system(size: 14, weight: .regular))
             .foregroundColor(.white.opacity(0.6))
             .multilineTextAlignment(.center)
@@ -233,11 +243,11 @@ struct EmailSignUpView: View {
     }
 
     private var formIsValid: Bool {
-        !firstName.isEmpty && !lastName.isEmpty && !email.isEmpty && password.count >= 8
+        !firstName.isEmpty && !lastName.isEmpty && !email.isEmpty && password.count >= 8 && selectedSchool != nil
     }
 
     private func register() async {
-        guard formIsValid else { return }
+        guard formIsValid, let selectedSchool else { return }
         isLoading = true
         do {
             _ = try await AuthService.shared.register(
@@ -253,5 +263,26 @@ struct EmailSignUpView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private var footerText: String {
+        guard !schoolService.schools.isEmpty else {
+            return "Loading participating schools..."
+        }
+        let domains = schoolService.schools
+            .flatMap { $0.allowedEmailDomains }
+            .map { "@\($0)" }
+            .sorted()
+        if let first = domains.first {
+            if domains.count == 1 {
+                return "Only \(first) addresses are accepted during the pilot."
+            } else {
+                let allButLast = domains.dropLast()
+                let last = domains.last ?? ""
+                let joined = allButLast.joined(separator: ", ")
+                return "Only \(joined) or \(last) addresses are accepted during the pilot."
+            }
+        }
+        return "Use your campus email to continue."
     }
 }

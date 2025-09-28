@@ -2,9 +2,10 @@ import SwiftUI
 
 struct SchoolSelectionView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var schoolService = SchoolService.shared
     @State private var errorMessage: String?
     @State private var isUpdating = false
-    @State private var selectedSchool: School = SchoolDirectory.columbia
+    @State private var selectedSchool: School?
     
     private var headerSection: some View {
         VStack(spacing: 12) {
@@ -22,7 +23,7 @@ struct SchoolSelectionView: View {
     private func emailDomainsText(for school: School) -> String {
         school.allowedEmailDomains.map { "@\($0)" }.joined(separator: ", ")
     }
-    
+
     private func schoolRow(for school: School) -> some View {
         HStack {
             Image(systemName: school.campusIconName)
@@ -36,7 +37,7 @@ struct SchoolSelectionView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if selectedSchool.id == school.id {
+            if selectedSchool?.id == school.id {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Color.accentColor)
             }
@@ -46,14 +47,26 @@ struct SchoolSelectionView: View {
             selectedSchool = school
         }
     }
-    
+
     private var schoolList: some View {
-        List {
-            ForEach(SchoolDirectory.all, id: \.id) { school in
-                schoolRow(for: school)
+        Group {
+            if schoolService.schools.isEmpty {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading participating schools...")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                List {
+                    ForEach(schoolService.schools, id: \.id) { school in
+                        schoolRow(for: school)
+                    }
+                }
+                .listStyle(.insetGrouped)
             }
         }
-        .listStyle(.insetGrouped)
     }
     
     private var continueButton: some View {
@@ -73,7 +86,7 @@ struct SchoolSelectionView: View {
                     .padding(.horizontal, 24)
             }
         }
-        .disabled(isUpdating)
+        .disabled(isUpdating || selectedSchool == nil)
     }
 
     var body: some View {
@@ -85,8 +98,16 @@ struct SchoolSelectionView: View {
         }
         .navigationBarHidden(true)
         .task {
+            try? await SchoolService.shared.ensureSchoolsLoaded()
             if let existing = appState.selectedSchool {
                 selectedSchool = existing
+            } else if selectedSchool == nil {
+                selectedSchool = schoolService.schools.first
+            }
+        }
+        .onChange(of: schoolService.schools) { schools in
+            if selectedSchool == nil {
+                selectedSchool = schools.first
             }
         }
         .alert(item: Binding(
@@ -98,7 +119,7 @@ struct SchoolSelectionView: View {
     }
 
     private func updateSchool() async {
-        guard let uid = appState.currentUser?.id else { return }
+        guard let uid = appState.currentUser?.id, let selectedSchool else { return }
         isUpdating = true
         do {
             let profile = try await AuthService.shared.updateSchool(for: uid, schoolId: selectedSchool.id)
