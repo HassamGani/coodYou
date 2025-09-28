@@ -1,15 +1,18 @@
 import SwiftUI
 import MapKit
 import UIKit
+import Combine
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
-    @StateObject private var viewModel = HomeViewModel()
+    @StateObject private var viewModel: HomeViewModel = HomeViewModel()
 
-    @State private var region = MKCoordinateRegion(
+    private static let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 40.8075, longitude: -73.9641),
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
     )
+    
+    @State private var region = Self.defaultRegion
     @State private var selectedHall: DiningHall?
     @State private var checkoutHall: DiningHall?
     @State private var showingHandoff = false
@@ -17,66 +20,16 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                mapCanvas
-
-                VStack(spacing: 12) {
-                    searchBar
-                    searchResults
-                }
-                .padding(.top, 16)
-                .padding(.horizontal, 16)
-
-                if viewModel.shouldShowHallPanel {
-                    hallListPanel
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                if let order = viewModel.activeOrder, !order.isTerminal {
-                    ActiveOrderOverlay(order: order) {
-                        showingHandoff = true
-                    }
-                    .padding(.bottom, 32)
-                    .padding(.trailing, 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                }
-            }
-            .navigationBarHidden(true)
+            mainContent
         }
         .sheet(isPresented: $showingHandoff) {
-            if let order = viewModel.activeOrder {
-                HandoffView(order: order, run: nil)
-                    .environmentObject(appState)
-            }
+            handoffSheet
         }
         .sheet(item: $selectedHall) { hall in
-            NavigationStack {
-                DiningHallDetailView(hall: hall,
-                                     viewModel: viewModel,
-                                     checkoutHall: $checkoutHall)
-                    .navigationTitle(hall.name)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Close") { selectedHall = nil }
-                        }
-                    }
-            }
+            selectedHallSheet(hall: hall)
         }
         .sheet(item: $checkoutHall) { hall in
-            NavigationStack {
-                CheckoutView(hall: hall, viewModel: viewModel)
-                    .environmentObject(appState)
-                    .navigationTitle("Checkout")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { checkoutHall = nil }
-                        }
-                    }
-            }
+            checkoutHallSheet(hall: hall)
         }
         .task {
             if let user = appState.currentUser {
@@ -97,6 +50,12 @@ struct HomeView: View {
                 region.center = hall.coordinate
             }
             viewModel.subscribeToPool()
+        }
+        .onReceive(viewModel.$userLocation.compactMap { $0 }) { location in
+            guard viewModel.selectedHall == nil else { return }
+            withAnimation(.easeInOut(duration: 0.35)) {
+                region.center = location
+            }
         }
         .onChange(of: viewModel.activeSchoolFilter) { _, school in
             if let school, let firstHall = viewModel.halls(for: school).first {
@@ -121,16 +80,88 @@ struct HomeView: View {
                 viewModel.activeSchoolFilter = nil
             }
         }
-        .alert(item: Binding(
-            get: { viewModel.errorMessage.map(ErrorMessage.init(value:)) },
-            set: { viewModel.errorMessage = $0?.value }
-        )) { message in
+        .alert(item: errorBinding) { message in
             Alert(title: Text("Error"), message: Text(message.value), dismissButton: .default(Text("OK")))
         }
     }
 
+    private var mainContent: some View {
+        ZStack(alignment: .top) {
+            mapCanvas
+
+            VStack(spacing: 12) {
+                searchBar
+                searchResults
+            }
+            .padding(.top, 16)
+            .padding(.horizontal, 16)
+
+            if viewModel.shouldShowHallPanel {
+                hallListPanel
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if let order = viewModel.activeOrder, !order.isTerminal {
+                ActiveOrderOverlay(order: order) {
+                    showingHandoff = true
+                }
+                .padding(.bottom, 32)
+                .padding(.trailing, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+        .navigationBarHidden(true)
+    }
+
+    private var errorBinding: Binding<ErrorMessage?> {
+        Binding(
+            get: { viewModel.errorMessage.map(ErrorMessage.init(value:)) },
+            set: { viewModel.errorMessage = $0?.value }
+        )
+    }
+
+    @ViewBuilder
+    private var handoffSheet: some View {
+        if let order = viewModel.activeOrder {
+            HandoffView(order: order, run: nil)
+                .environmentObject(appState)
+        }
+    }
+
+    private func selectedHallSheet(hall: DiningHall) -> some View {
+        NavigationStack {
+            DiningHallDetailView(hall: hall,
+                                 viewModel: viewModel,
+                                 checkoutHall: $checkoutHall)
+                .navigationTitle(hall.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Close") { selectedHall = nil }
+                    }
+                }
+        }
+    }
+
+    private func checkoutHallSheet(hall: DiningHall) -> some View {
+        NavigationStack {
+            CheckoutView(hall: hall, viewModel: viewModel)
+                .environmentObject(appState)
+                .navigationTitle("Checkout")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { checkoutHall = nil }
+                    }
+                }
+        }
+    }
+
     private var mapCanvas: some View {
-        Map(coordinateRegion: $region, interactionModes: [.all], showsUserLocation: true, annotationItems: viewModel.visibleHalls) { hall in
+        let halls = viewModel.visibleHalls
+        return Map(coordinateRegion: $region, interactionModes: [.all], showsUserLocation: true, annotationItems: halls) { hall in
             MapAnnotation(coordinate: hall.coordinate) {
                 HallPin(isSelected: viewModel.selectedHall?.id == hall.id,
                         tint: accentColor(for: hall.schoolId))

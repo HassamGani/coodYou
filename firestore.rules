@@ -150,9 +150,18 @@ service cloud.firestore {
   }
 
   function isUpdatingAllowedFields(old, new) {
-    // Disallow changes to protected fields in updates
-    let protectedKeys = ['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId','eligibleSchoolIds'];
-    return !(new.keys().hasAny(protectedKeys));
+    // Clients may only update allowed fields; protected keys must stay the same or be omitted.
+    return protectedFieldUnchanged(old, new, 'canDash')
+           && protectedFieldUnchanged(old, new, 'rolePreferences')
+           && protectedFieldUnchanged(old, new, 'rating')
+           && protectedFieldUnchanged(old, new, 'completedRuns')
+           && protectedFieldUnchanged(old, new, 'stripeConnected')
+           && protectedFieldUnchanged(old, new, 'schoolId')
+           && protectedFieldUnchanged(old, new, 'eligibleSchoolIds');
+  }
+
+  function protectedFieldUnchanged(old, new, field) {
+    return !new.keys().hasAny([field]) || new[field] == old[field];
   }
 
   function isValidOrderCreate(data) {

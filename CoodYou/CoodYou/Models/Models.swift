@@ -7,10 +7,10 @@ struct UserProfile: Identifiable, Codable {
     var lastName: String
     var email: String
     var phoneNumber: String?
-    var rolePreferences: [UserRole]
-    var rating: Double
-    var completedRuns: Int
-    var stripeConnected: Bool
+    var rolePreferences: [UserRole] = [.buyer]
+    var rating: Double = 5.0
+    var completedRuns: Int = 0
+    var stripeConnected: Bool = false
     var pushToken: String?
     var schoolId: String?
     // Wallet balance in cents (buyers) maintained by server/cloud functions
@@ -23,6 +23,81 @@ struct UserProfile: Identifiable, Codable {
     var paymentProviderPreferences: [PaymentMethodType] = PaymentMethodType.defaultOrder
     var settings: UserSettings = .default
     var createdAt: Date = Date()
+}
+
+extension UserProfile {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case firstName
+        case lastName
+        case email
+        case phoneNumber
+        case rolePreferences
+        case rating
+        case completedRuns
+        case stripeConnected
+        case pushToken
+        case schoolId
+        case walletBalanceCents
+        case eligibleSchoolIds
+        case canDash
+        case defaultPaymentMethodId
+        case paymentProviderPreferences
+        case settings
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        firstName = try container.decodeIfPresent(String.self, forKey: .firstName) ?? "Lion"
+        lastName = try container.decodeIfPresent(String.self, forKey: .lastName) ?? "Dash"
+        email = try container.decode(String.self, forKey: .email)
+        phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
+        if let roles = try container.decodeIfPresent([UserRole].self, forKey: .rolePreferences) {
+            rolePreferences = roles
+        }
+        rating = try container.decodeIfPresent(Double.self, forKey: .rating) ?? 5.0
+        completedRuns = try container.decodeIfPresent(Int.self, forKey: .completedRuns) ?? 0
+        stripeConnected = try container.decodeIfPresent(Bool.self, forKey: .stripeConnected) ?? false
+        pushToken = try container.decodeIfPresent(String.self, forKey: .pushToken)
+        schoolId = try container.decodeIfPresent(String.self, forKey: .schoolId)
+        walletBalanceCents = try container.decodeIfPresent(Int.self, forKey: .walletBalanceCents) ?? 0
+        eligibleSchoolIds = try container.decodeIfPresent([String].self, forKey: .eligibleSchoolIds)
+        canDash = try container.decodeIfPresent(Bool.self, forKey: .canDash) ?? false
+        defaultPaymentMethodId = try container.decodeIfPresent(String.self, forKey: .defaultPaymentMethodId)
+        if let paymentPrefs = try container.decodeIfPresent([PaymentMethodType].self, forKey: .paymentProviderPreferences) {
+            paymentProviderPreferences = paymentPrefs
+        }
+        settings = try container.decodeIfPresent(UserSettings.self, forKey: .settings) ?? .default
+        if let timestamp = try container.decodeIfPresent(Date.self, forKey: .createdAt) {
+            createdAt = timestamp
+        } else {
+            createdAt = Date()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(firstName, forKey: .firstName)
+        try container.encode(lastName, forKey: .lastName)
+        try container.encode(email, forKey: .email)
+        try container.encodeIfPresent(phoneNumber, forKey: .phoneNumber)
+        try container.encode(rolePreferences, forKey: .rolePreferences)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(completedRuns, forKey: .completedRuns)
+        try container.encode(stripeConnected, forKey: .stripeConnected)
+        try container.encodeIfPresent(pushToken, forKey: .pushToken)
+        try container.encodeIfPresent(schoolId, forKey: .schoolId)
+        try container.encode(walletBalanceCents, forKey: .walletBalanceCents)
+        try container.encodeIfPresent(eligibleSchoolIds, forKey: .eligibleSchoolIds)
+        try container.encode(canDash, forKey: .canDash)
+        try container.encodeIfPresent(defaultPaymentMethodId, forKey: .defaultPaymentMethodId)
+        try container.encode(paymentProviderPreferences, forKey: .paymentProviderPreferences)
+        try container.encode(settings, forKey: .settings)
+        try container.encode(createdAt, forKey: .createdAt)
+    }
 }
 
 enum UserRole: String, Codable, CaseIterable {

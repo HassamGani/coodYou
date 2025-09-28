@@ -10,6 +10,24 @@ struct OrdersView: View {
                 if let active = viewModel.activeOrder {
                     Section("Current order") {
                         OrderRow(order: active)
+                        // Show cancel button when order is still cancellable
+                        if active.status == .requested || active.status == .pooled {
+                            HStack {
+                                Spacer()
+                                Button(role: .destructive) {
+                                    Task {
+                                        await viewModel.cancelActiveOrder()
+                                    }
+                                } label: {
+                                    if viewModel.isCancelling {
+                                        ProgressView()
+                                    } else {
+                                        Text("Cancel order")
+                                    }
+                                }
+                                Spacer()
+                            }
+                        }
                     }
                 }
 
@@ -47,9 +65,7 @@ struct OrderRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(order.lineItems?.map { "\($0.quantity)x \($0.name)" }.joined(separator: ", ") ?? "Order")
                     .font(.subheadline.weight(.semibold))
-                Text(order.createdAt, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                timestampView
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
@@ -61,6 +77,18 @@ struct OrderRow: View {
             }
         }
         .padding(.vertical, 8)
+    }
+
+    private var timestampView: some View {
+        Group {
+            if order.isTerminal {
+                Text(order.createdAt.formatted(date: .abbreviated, time: .shortened))
+            } else {
+                Text(order.createdAt, style: .relative)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 

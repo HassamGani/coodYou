@@ -1,9 +1,10 @@
 import Foundation
 import Combine
+import CoreLocation
 
 @MainActor
-final class HomeViewModel: ObservableObject {
-    @Published private(set) var diningHalls: [DiningHall]
+final class HomeViewModel: NSObject, ObservableObject {
+    @Published private(set) var diningHalls: [DiningHall] = []
     @Published var selectedHall: DiningHall?
     @Published var selectedWindow: ServiceWindowType = .current
     @Published var livePool: LivePoolSnapshot?
@@ -15,6 +16,7 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var loadingMenuIds: Set<String> = []
     @Published private(set) var menuErrors: [String: String] = [:]
     @Published private(set) var hallStatuses: [String: DiningHallStatus] = [:]
+    @Published private(set) var userLocation: CLLocationCoordinate2D?
 
     // --- Search state ---
     @Published var searchText: String = ""
@@ -40,10 +42,14 @@ final class HomeViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var ordersTask: Task<Void, Never>?
     private var ignoreSearchChanges = false
+    private let locationManager = CLLocationManager()
+    private var notificationObserver: NSObjectProtocol?
 
-    init() {
+    override init() {
+        super.init()
         diningHalls = hallService.halls
         selectedHall = nil
+        configureLocation()
 
         Task {
             do {
@@ -69,11 +75,23 @@ final class HomeViewModel: ObservableObject {
                 self?.diningHalls = halls
             }
             .store(in: &cancellables)
+
+        // Listen for immediate cancel notifications so we can clear placing state without waiting
+        // for Firestore snapshot propagation.
+        notificationObserver = NotificationCenter.default.addObserver(forName: .orderWasCancelled, object: nil, queue: .main) { [weak self] note in
+            guard let self = self else { return }
+            self.isPlacingOrder = false
+            if let id = note.userInfo?["orderId"] as? String, self.activeOrder?.id == id {
+                self.activeOrder = nil
+            }
+        }
     }
 
     deinit {
         ordersTask?.cancel()
         orderService.stopListening()
+        if let obs = notificationObserver { NotificationCenter.default.removeObserver(obs) }
+        locationManager.stopUpdatingLocation()
     }
 
     var sortedHalls: [DiningHall] {
@@ -228,8 +246,21 @@ final class HomeViewModel: ObservableObject {
                         .filter { !$0.isTerminal }
                         .sorted(by: { $0.createdAt > $1.createdAt })
                         .first
+                    #if DEBUG
+                    let statusLog = orders.map { "\($0.id):\($0.status.rawValue)" }.joined(separator: ", ")
+                    print("[DEBUG][HomeViewModel] snapshot orders count=\(orders.count) statuses=[\(statusLog)]")
+                    #endif
                     await MainActor.run {
                         self.activeOrder = active
+                        // If there is no active order (for example it was cancelled),
+                        // ensure any in-progress placing state is cleared so UI spinners/timers stop.
+                        if active == nil {
+                            self.isPlacingOrder = false
+                        }
+                        // Also, if the active order exists but is terminal (shouldn't happen here), clear placing state.
+                        if let act = active, act.isTerminal {
+                            self.isPlacingOrder = false
+                        }
                     }
                 }
             } catch {
@@ -519,5 +550,50 @@ final class HomeViewModel: ObservableObject {
 
     func draftLineItems(for hall: DiningHall) -> [OrderLineItem] {
         aggregateLineItems(cartItems(for: hall))
+    }
+
+    private func configureLocation() {
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        if CLLocationManager.locationServicesEnabled() {
+            switch locationManager.authorizationStatus {
+            case .notDetermined:
+                locationManager.requestWhenInUseAuthorization()
+            case .authorizedWhenInUse, .authorizedAlways:
+                locationManager.startUpdatingLocation()
+            case .restricted, .denied:
+                break
+            @unknown default:
+                break
+            }
+        }
+    }
+}
+
+extension HomeViewModel: CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        case .denied, .restricted:
+            manager.stopUpdatingLocation()
+        case .notDetermined:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let latest = locations.last else { return }
+        Task { @MainActor in
+            self.userLocation = latest.coordinate
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        #if DEBUG
+        print("[HomeViewModel] location error: \(error.localizedDescription)")
+        #endif
     }
 }

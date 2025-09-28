@@ -52,6 +52,8 @@ final class OrderService: ObservableObject {
                     continuation.resume(throwing: error)
                     return
                 }
+                // Notify app that an order was cancelled so UI state (spinners/timers) can clear immediately.
+                NotificationCenter.default.post(name: .orderWasCancelled, object: nil, userInfo: ["orderId": orderId])
                 continuation.resume(returning: ())
             }
         }
