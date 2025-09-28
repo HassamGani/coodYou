@@ -1,5 +1,8 @@
 import SwiftUI
 import FirebaseCore
+#if canImport(GoogleSignIn)
+import GoogleSignIn
+#endif
 
 @main
 struct CoodYouApp: App {
@@ -21,6 +24,11 @@ struct CoodYouApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+#if canImport(GoogleSignIn)
+        if let clientID = FirebaseApp.app()?.options.clientID {
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        }
+#endif
         true
     }
 }
