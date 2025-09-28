@@ -17,16 +17,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [loading, router, user]);
 
   if (!user) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">Checking session…</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-transparent text-white/50">Checking session…</div>;
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex min-h-screen bg-transparent text-[color:var(--text-primary)]">
       <SidebarNav />
       <div className="flex flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-y-auto px-6 py-8">
-          <div className="mx-auto max-w-6xl space-y-8">{children}</div>
+        <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-10">
+          <div className="mx-auto w-full max-w-7xl space-y-10 pb-10">{children}</div>
         </main>
       </div>
     </div>

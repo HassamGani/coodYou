@@ -260,7 +260,7 @@ final class HomeViewModel: ObservableObject {
             // Query schools collection by displayName and name (prefix search)
             do {
                 var fetchedSchools: [School] = []
-                let schoolsSnap = try await db.collection("schools")
+                    let schoolsSnap = try await strongSelf.db.collection("schools")
                     .whereField("active", isEqualTo: true)
                     .getDocuments()
                 for doc in schoolsSnap.documents {

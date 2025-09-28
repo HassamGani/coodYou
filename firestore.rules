@@ -27,15 +27,129 @@ service cloud.firestore {
     }
 
     match /hallPools/{document=**} {
-      allow read: if true;
-    }
+      rules_version = '2';
+      service cloud.firestore {
+        match /databases/{database}/documents {
 
-    match /dining_halls/{document=**} {
-      allow read: if true;
-    }
+          // Public collections
+          match /schools/{schoolId} {
+            allow read: if true;
+            allow list: if true;
+            // No client writes to schools in this baseline. Manage via admin tooling/functions.
+            allow write: if false;
+          }
 
-    match /config/{document=**} {
-      allow read: if true;
-    }
-  }
-}
+          match /diningHalls/{dhId} {
+            allow read: if true;
+            allow list: if true;
+            allow write: if false;
+          }
+
+          match /menus/{menuId} {
+            allow read: if true;
+            allow list: if true;
+            allow write: if false;
+          }
+
+          // Users: clients can create and update their own user doc, but cannot set protected fields.
+          match /users/{userId} {
+            allow read: if request.auth != null && request.auth.uid == userId;
+
+            // Create: must be the same authenticated user and must not include protected fields.
+            allow create: if request.auth != null
+                          && request.auth.uid == userId
+                          && isCreatingAllowedFields(request.resource.data);
+
+            // Update: only the same user may update non-protected fields.
+            allow update: if request.auth != null
+                          && request.auth.uid == userId
+                          && isUpdatingAllowedFields(resource.data, request.resource.data);
+
+            // Admins / server tooling may write via Admin SDK (server rules bypass).
+          }
+
+          // Orders: buyer can create an order. Reads and updates limited to buyer, assigned dasher, or admin.
+          match /orders/{orderId} {
+            allow create: if request.auth != null
+                          && request.resource.data.buyerId == request.auth.uid
+                          && isValidOrderCreate(request.resource.data);
+
+            allow read: if request.auth != null && (
+                          request.auth.uid == resource.data.buyerId ||
+                          request.auth.uid == resource.data.dasherId ||
+                          request.auth.token.admin == true
+                        );
+
+            // status updates should be performed only by the assigned dasher or server functions.
+            allow update: if request.auth != null && (
+                            // allow buyer to update certain non-security fields (delivery address etc.) prior to assignment
+                            (request.auth.uid == resource.data.buyerId && onlyBuyerMutableFields(resource.data, request.resource.data))
+                            ||
+                            // allow dasher to update status for their runs/orders
+                            (request.auth.uid == resource.data.dasherId && onlyStatusAndETA(resource.data, request.resource.data))
+                            ||
+                            // allow admin or server (custom claim) to update everything
+                            request.auth.token.admin == true
+                          );
+          }
+
+          // Runs: readable by involved dasher and staff; writes limited to server/dasher when assigned.
+          match /runs/{runId} {
+            allow read: if request.auth != null && (
+                          request.auth.uid == resource.data.dasherId ||
+                          request.auth.token.admin == true
+                        );
+            allow create: if false; // server (admin) should create runs or they are created via secure callable function
+            allow update: if request.auth != null && (
+                            request.auth.uid == resource.data.dasherId ||
+                            request.auth.token.admin == true
+                          );
+          }
+
+          // Payment methods: user may read/write their own payment methods (but server must manage provider tokens).
+          match /paymentMethods/{pmId} {
+            allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+            allow create: if request.auth != null && request.resource.data.userId == request.auth.uid && isValidPaymentCreate(request.resource.data);
+            allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+          }
+
+          // Generic fallback deny
+          match /{document=**} {
+            allow read, write: if false;
+          }
+
+          // Helper functions
+          function isCreatingAllowedFields(data) {
+            // Protected fields that must not be client-set:
+            return !(data.keys().hasAny(['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId']));
+          }
+
+          function isUpdatingAllowedFields(old, new) {
+            // Disallow changes to protected fields in updates
+            let protectedKeys = ['canDash','rolePreferences','rating','completedRuns','stripeConnected','schoolId'];
+            return !(new.keys().hasAny(protectedKeys));
+          }
+
+          function isValidOrderCreate(data) {
+            // Basic sanity checks for client-provided order data. Expand as needed.
+            return data.buyerId is string
+                   && data.items is list
+                   && data.total is number
+                   && data.createdAt is timestamp
+                   && data.status is string;
+          }
+
+          function onlyBuyerMutableFields(old, new) {
+            // Allow only certain buyer-side fields to change (e.g. delivery address, phone) pre-assignment.
+            let allowed = ['deliveryAddress','phoneNumber','notes'];
+            return new.keys().difference(old.keys()).size() == 0  // no new keys
+                   && new.keys().filter(k => !(k in old)).size() == 0
+                   && new.keys().all(k => (k in allowed) || (old[k] == new[k]));
+          }
+
+          function onlyStatusAndETA(old, new) {
+            // Allow dasher to change limited operational fields such as status and eta
+            return new.keys().all(k => k == 'status' || k == 'eta' || old[k] == new[k]);
+          }
+        }
+      }

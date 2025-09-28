@@ -8,10 +8,11 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-white">Profile &amp; settings</h2>
-        <p className="text-sm text-slate-400">Control notification preferences, update your contact info, and switch roles.</p>
-      </div>
+      <section className="surface-card p-6">
+        <p className="text-xs uppercase tracking-[0.32em] text-white/40">Profile &amp; settings</p>
+        <h2 className="mt-1 text-2xl font-semibold text-white">Curate your CampusDash experience</h2>
+        <p className="text-xs text-white/55">Update preferences, switch roles, and keep your contact details current.</p>
+      </section>
       <ProfileSettings profile={profile} />
     </div>
   );

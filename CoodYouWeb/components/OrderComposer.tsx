@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { clsx } from 'clsx';
 import { createOrder } from '@/services/orderService';
 import type { DiningHall, ServiceWindowCode } from '@/models/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,11 +25,7 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
   const [loading, setLoading] = useState(false);
 
   if (!user || !hall) {
-    return (
-      <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-400">
-        Select a dining hall to create a pooled order.
-      </div>
-    );
+    return <div className="surface-card--muted p-6 text-sm text-white/60">Select a dining hall to create a pooled order.</div>;
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -49,10 +46,14 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
   const perBuyerPrice = basePriceDollars / 2 + 0.5;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white">Place pooled order</h3>
-        <p className="text-xs text-slate-400">You will be matched with another student inside {hall.name}.</p>
+    <form onSubmit={handleSubmit} className="surface-card space-y-6 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.32em] text-white/40">Pool a swipe</p>
+          <h3 className="mt-1 text-xl font-semibold text-white">Order from {hall.name}</h3>
+          <p className="text-xs text-white/50">We will pair you with someone already inside the hall.</p>
+        </div>
+        <span className="pill-control px-3 py-1 text-white/60">{hall.campus === 'barnard' ? 'Barnard' : 'Columbia'}</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         {windowOptions.map((option) => (
@@ -60,11 +61,12 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
             key={option.value}
             type="button"
             onClick={() => setWindowCode(option.value)}
-            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+            className={clsx(
+              'rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors',
               windowCode === option.value
-                ? 'border-brand.accent bg-brand.accent/10 text-brand.accent'
-                : 'border-white/10 bg-white/5 text-slate-200 hover:border-white/30'
-            }`}
+                ? 'border-white bg-white text-black shadow-[0_18px_40px_rgba(5,5,7,0.35)]'
+                : 'border-white/10 bg-white/[0.02] text-white/70 hover:border-white/25 hover:text-white'
+            )}
           >
             {option.label}
           </button>
@@ -76,7 +78,7 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
           <input
             value={meetingPoint}
             onChange={(event) => setMeetingPoint(event.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-brand.accent focus:outline-none"
+            className="w-full rounded-2xl border border-white/10 bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-white focus:outline-none"
           />
         </div>
         <div className="space-y-2">
@@ -84,7 +86,7 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
           <input
             value={pickupNotes}
             onChange={(event) => setPickupNotes(event.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-brand.accent focus:outline-none"
+            className="w-full rounded-2xl border border-white/10 bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-white focus:outline-none"
           />
         </div>
       </div>
@@ -97,12 +99,12 @@ export const OrderComposer = ({ hall }: OrderComposerProps) => {
         <button
           type="submit"
           disabled={loading}
-          className="rounded-2xl bg-brand.accent px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-emerald-500/40 disabled:opacity-60"
+          className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black shadow-[0_20px_45px_rgba(255,255,255,0.15)] transition disabled:opacity-60"
         >
           {loading ? 'Queueing…' : 'Enter pool'}
         </button>
       </div>
-      {status && <p className="text-xs text-slate-300">{status}</p>}
+      {status && <p className="text-xs text-white/60">{status}</p>}
     </form>
   );
 };

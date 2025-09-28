@@ -1,3 +1,5 @@
+'use client';
+
 import { collection, doc, getDoc, getDocs, orderBy, query } from 'firebase/firestore';
 import type { DiningHall, LivePoolStat } from '@/models/types';
 import { db } from '@/lib/firebase';

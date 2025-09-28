@@ -52,7 +52,11 @@ struct HandoffView: View {
             ZStack(alignment: .bottomLeading) {
                 if let bindingRegion = regionBinding {
                     Map(coordinateRegion: bindingRegion, annotationItems: annotationItems) { point in
-                        MapMarker(coordinate: point.coordinate, tint: .accentColor)
+                        MapAnnotation(coordinate: point.coordinate) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))

@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import { z } from "zod";
+import "./onUserCreate";
 
 admin.initializeApp();
 
@@ -29,7 +30,7 @@ type OrderStatus = (typeof orderStatus)[keyof typeof orderStatus];
 
 type ServiceWindow = "breakfast" | "lunch" | "dinner";
 
-const windowPrices: Record<ServiceWindow, keyof admin.firestore.DocumentData> = {
+const windowPrices: Record<ServiceWindow, string> = {
   breakfast: "price_breakfast",
   lunch: "price_lunch",
   dinner: "price_dinner",
@@ -143,10 +144,17 @@ export const queueOrder = functions
       }
       const hallId = orderData.hallId as string;
       const windowType = orderData.windowType as ServiceWindow;
-      const pairDoc = await fetchOrCreatePairGroup(hallId, windowType, transaction);
+      const pairDoc = await fetchOrCreatePairGroup(
+        hallId,
+        windowType,
+        transaction
+      );
       const groupData = pairDoc.data()!;
       if (groupData.filledCount >= groupData.targetSize) {
-        throw new functions.https.HttpsError("failed-precondition", "Pair group full");
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Pair group full"
+        );
       }
 
       const groupPin = groupData.pin
@@ -171,9 +179,7 @@ export const queueOrder = functions
         transaction.update(pairDoc.ref, { status: "filled" });
         const runRef = db.collection("runs").doc();
         const ordersQuery = await transaction.get(
-          db
-            .collection("orders")
-            .where("pairGroupId", "==", pairDoc.id)
+          db.collection("orders").where("pairGroupId", "==", pairDoc.id)
         );
         const estimatedPayout = ordersQuery.docs.reduce((sum, doc) => {
           return sum + (doc.get("priceCents") as number);
@@ -228,7 +234,7 @@ export const cancelOrder = functions
         );
       }
       const status = orderData.status as OrderStatus;
-      if (![orderStatus.requested, orderStatus.pooled].includes(status)) {
+      if (status !== orderStatus.requested && status !== orderStatus.pooled) {
         throw new functions.https.HttpsError(
           "failed-precondition",
           "Order cannot be cancelled"
@@ -384,11 +390,17 @@ export const markDelivered = functions
         ? Number(functions.config().platform?.fee_default)
         : 0;
       const hallFee = platformConfig.exists
-        ? platformConfig.get(runData.hallId) ?? platformConfig.get("default") ?? platformFeeDefault
+        ? platformConfig.get(runData.hallId) ??
+          platformConfig.get("default") ??
+          platformFeeDefault
         : platformFeeDefault;
       const platformFeeCents = Math.round((hallFee as number) * 100);
-      const processingFeeCents = Math.round(totalCents * STRIPE_PERCENT_FEE) + STRIPE_FIXED_FEE_CENTS;
-      const payoutCents = Math.max(totalCents - platformFeeCents - processingFeeCents, 0);
+      const processingFeeCents =
+        Math.round(totalCents * STRIPE_PERCENT_FEE) + STRIPE_FIXED_FEE_CENTS;
+      const payoutCents = Math.max(
+        totalCents - platformFeeCents - processingFeeCents,
+        0
+      );
 
       const paymentRef = db.collection("payments").doc();
       transaction.set(paymentRef, {

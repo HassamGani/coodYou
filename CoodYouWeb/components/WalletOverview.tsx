@@ -33,43 +33,50 @@ export const WalletOverview = ({ profile, paymentMethods }: WalletOverviewProps)
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-        <h3 className="text-lg font-semibold text-white">Wallet balance</h3>
-        <p className="text-4xl font-semibold text-brand.accent">${((profile?.walletBalanceCents ?? 0) / 100).toFixed(2)}</p>
-        <p className="text-xs text-slate-400">Funds transfer to Stripe Express after delivery confirmation.</p>
-        <button
-          onClick={handleLinkStripe}
-          className="mt-4 rounded-full bg-brand.accent px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-900 shadow-lg shadow-emerald-500/40"
-        >
-          Link Stripe account
-        </button>
+      <section className="surface-card p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.32em] text-white/40">Wallet balance</p>
+            <p className="mt-2 text-4xl font-semibold text-white">${((profile?.walletBalanceCents ?? 0) / 100).toFixed(2)}</p>
+            <p className="mt-1 text-xs text-white/50">Funds transfer to Stripe Express after delivery confirmation.</p>
+          </div>
+          <button
+            onClick={handleLinkStripe}
+            className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white hover:bg-white hover:text-black"
+          >
+            Link Stripe
+          </button>
+        </div>
       </section>
 
-      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+      <section className="surface-card p-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Payment methods</h3>
+          <div>
+            <p className="text-xs uppercase tracking-[0.32em] text-white/40">Payment methods</p>
+            <h3 className="text-lg font-semibold text-white">Linked instruments</h3>
+          </div>
           <button
             onClick={handleAddMockMethod}
-            className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 hover:border-brand.accent hover:text-brand.accent"
+            className="rounded-full border border-white/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white hover:bg-white hover:text-black"
           >
             Add card
           </button>
         </div>
         <div className="mt-4 space-y-3">
-          {paymentMethods.length === 0 && <p className="text-sm text-slate-400">No saved cards yet.</p>}
+          {paymentMethods.length === 0 && <p className="text-sm text-white/60">No saved cards yet.</p>}
           {paymentMethods.map((method) => (
-            <div key={method.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div key={method.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
               <div>
                 <p className="text-sm font-semibold text-white">{method.displayName}</p>
-                <p className="text-xs text-slate-400">{method.type.toUpperCase()} {method.lastFour && `• ${method.lastFour}`}</p>
+                <p className="text-xs text-white/45">{method.type.toUpperCase()} {method.lastFour && `• ${method.lastFour}`}</p>
               </div>
-              {method.isDefault && <span className="text-xs text-brand.accent">Default</span>}
+              {method.isDefault && <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-black">Default</span>}
             </div>
           ))}
         </div>
       </section>
 
-      {status && <p className="text-xs text-slate-300">{status}</p>}
+      {status && <p className="text-xs text-white/60">{status}</p>}
     </div>
   );
 };

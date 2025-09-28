@@ -26,7 +26,7 @@ struct SchoolSelectionView: View {
                 selectedSchool = schoolService.schools.first
             }
         }
-        .onChange(of: schoolService.schools) { schools in
+        .onChange(of: schoolService.schools) { _, schools in
             if selectedSchool == nil {
                 selectedSchool = schools.first
             }

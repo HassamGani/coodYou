@@ -38,16 +38,106 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
    - Products: FirebaseAuth, FirebaseFirestore, FirebaseFunctions, FirebaseMessaging, FirebaseCore.
    - Add `FirebaseFirestoreSwift` overlay if using Codable helpers.
    - Add `https://github.com/google/GoogleSignIn-iOS` (GoogleSignIn) for Google login.
-5. Add `AuthenticationServices`, `PassKit`, and `Sign in with Apple` capabilities to the app target.
+5. Add `PassKit` and push capabilities; Sign in with Apple is no longer required for the mobile client.
 6. Configure Push Notifications and APNs keys in the Firebase console.
 7. (Optional) Create an Apple Pay merchant ID and update `merchant.com.campusdash` inside `AddPaymentMethodSheet.swift`.
 
 ### Authentication and onboarding
 
 - **Email / password** sign-up enforces `@columbia.edu` or `@barnard.edu` addresses and captures first/last names plus optional phone numbers.
-- **Google** and **Apple** sign-in routes through Firebase Auth, automatically provisioning a Firestore profile and school record when an allowed campus email is detected.
-- First launch presents the new **LandingView** with CampusDash branding and options to register, sign in, or use Apple/Google credentials.
+- **Google** OAuth and password login route through Firebase Auth, automatically provisioning a Firestore profile and school record when an allowed campus email is detected.
+- First launch presents the new **LandingView** with CampusDash branding and options to register, sign in via email, or continue with Google.
 - After authentication the user must pick a campus (currently only Columbia/Barnard) before the main tab experience unlocks.
+
+## Auth experience (2025 redesign)
+
+- **Visual rationale**: the shell combines Uber’s neutral boldness (high-contrast SF type, black/white palette, ruthless hierarchy) with Cluely’s calm micro-interactions (airy 8pt grid, gentle elevation, matched-geometry transitions). Spacing, typography, and the accent palette are codified in `Theme.swift` and mirrored in `Resources/theme-tokens.json` for design/development parity.
+- **SwiftUI-first architecture**: `AuthShellView` orchestrates `WelcomeSignInView`, `CreateAccountView`, `CodeEntryView`, `ForgotPasswordView`, and shared components (OAuth buttons, legal footer, toast banner, password meter). A single `AuthShellViewModel` state machine (`.welcome`, `.emailEntry`, `.codeEntry`, `.creating`, `.forgot`, `.success`, `.error`) keeps transitions inline instead of full-screen jumps.
+- **HIG & motion compliance**: controls honour 44pt touch targets, the primary CTA animates with a spring while respecting Reduce Motion, and haptics (`.light`, `.warning`, `.success`) reinforce validation events.
+- **Accessibility checklist**:
+  - Dynamic Type up to XXL with graceful wrapping.
+  - VoiceOver labels for fields, buttons, divider, and legal text; inline errors announce via `auth.inlineError` accessibility element.
+  - Contrast > WCAG AA in light/dark, no pure white backgrounds (`bg.base` resolves to #FFFFFF light / #0B0B0C dark with material wrappers).
+  - RTL verified in previews; localization ready via `NSLocalizedString` keys listed below.
+- **Micro-interactions**: the primary CTA uses `PrimaryButtonStyle` for press scaling, spinner, and success morph; `CheckmarkSuccess` animates a trimmed circle + SF Symbol checkmark (no external Lottie dependency) for the 1.5s success dwell before navigation.
+- **System feedback**: inline errors live under their field, `ToastBanner` surfaces network or linking issues, and resend countdown disables the code button for 30s.
+
+### Integration guide
+
+1. Swap `AuthShellView(service:)` injection in `LandingView` with a production `AuthFlowService` implementation that calls your backend for passwordless links/codes.
+2. Implement `requestCode`, `verifyCode`, and `createAccount` to hit your auth API; map backend errors to `AuthFlowError` for consistent messaging.
+3. Wire `AuthShellViewModel.handleOAuthSuccess` with real “new user” / “link required” flags from backend responses.
+4. Provide legal content by replacing `auth.legal.placeholder` strings or presenting rich Markdown within `LegalSheetView`.
+5. Add `message`/`mailto` URL schemes to `LSApplicationQueriesSchemes` if you keep the “Open email app” shortcut.
+6. Update UI tests if you localise the displayed strings (see key list below) and keep the accessibility identifiers (`auth.emailField`, `auth.primaryButton`, `auth.inlineError`).
+
+### Testing
+
+- **Unit**: `AuthShellViewModelTests` exercise state transitions (email validation, OTP paste, password strength) with the actor-based `MockAuthFlowService`.
+- **Snapshot**: `AuthShellSnapshotTests` renders the welcome state via `ImageRenderer` to guard against layout regressions in light/dark appearances.
+- **UI**: `CoodYouUITests.testAuthEmailValidation` walks the happy-path error case (typing an invalid email and asserting inline guidance).
+
+### Localization keys
+
+```
+auth.brand,
+auth.headline,
+auth.subheadline,
+auth.divider.or,
+auth.field.email,
+auth.field.name,
+auth.field.password,
+auth.placeholder.email,
+auth.placeholder.name,
+auth.placeholder.password,
+auth.cta.continue,
+auth.cta.signIn,
+auth.cta.verify,
+auth.cta.create,
+auth.cta.reset,
+auth.link.create,
+auth.link.haveAccount,
+auth.link.forgot,
+auth.link.backToSignIn,
+auth.link.usePassword,
+auth.link.useEmailCode,
+auth.code.title,
+auth.code.subtitle,
+auth.code.resend,
+auth.code.resendIn,
+auth.code.openMail,
+auth.code.paste,
+auth.toast.resetSent,
+auth.toast.linkAccount,
+auth.success.title,
+auth.success.subtitle,
+auth.legal.disclaimer,
+auth.legal.terms,
+auth.legal.privacy,
+auth.legal.placeholder,
+auth.validation.email,
+auth.validation.name,
+auth.validation.passwordWeak,
+auth.validation.passwordRequired,
+auth.validation.school,
+auth.validation.codeLength,
+auth.oauth.googleSubtitle,
+auth.password.weak,
+auth.password.medium,
+auth.password.strong,
+auth.error.invalidEmail,
+auth.error.invalidCode,
+auth.error.expiredCode,
+auth.error.accountExists,
+auth.error.offline,
+auth.error.oauthCancelled,
+auth.error.server,
+auth.error.generic,
+auth.accessibility.loading,
+auth.accessibility.create
+```
+
+Fill these in `Localizable.strings` for each supported locale; the current build falls back to key names until translations land.
 
 ### Profile, settings, and payments
 

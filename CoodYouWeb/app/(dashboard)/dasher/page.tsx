@@ -26,33 +26,40 @@ export default function DasherPage() {
 
   return (
     <div className="space-y-8">
-      <section className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-white">Claimable runs</h2>
-          <p className="text-sm text-slate-400">Walk into a hall and accept a pooled order. Payouts hit your wallet instantly.</p>
+      <section className="surface-card p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.32em] text-white/40">Claimable runs</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Walk-in jobs ready to assign</h2>
+            <p className="text-xs text-white/55">Enter a hall and tap claim to pair with waiting buyers.</p>
+          </div>
+          <select
+            value={hallFilter ?? ''}
+            onChange={(event) => setHallFilter(event.target.value || undefined)}
+            className="rounded-full border border-white/12 bg-transparent px-4 py-2 text-sm text-white/80 transition focus:border-white focus:outline-none"
+          >
+            <option value="">All halls</option>
+            {halls.map((hall) => (
+              <option key={hall.id} value={hall.id}>
+                {hall.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value={hallFilter ?? ''}
-          onChange={(event) => setHallFilter(event.target.value || undefined)}
-          className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white"
-        >
-          <option value="">All halls</option>
-          {halls.map((hall) => (
-            <option key={hall.id} value={hall.id}>
-              {hall.name}
-            </option>
-          ))}
-        </select>
+        <div className="mt-6">
+          <RunFeed runs={availableRuns ?? []} mode="available" />
+        </div>
       </section>
 
-      <RunFeed runs={availableRuns ?? []} mode="available" />
-
-      <section className="space-y-4">
-        <h2 className="text-2xl font-semibold text-white">My active runs</h2>
+      <section className="surface-card p-6 space-y-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.32em] text-white/40">My active runs</p>
+          <h2 className="mt-1 text-2xl font-semibold text-white">Track your deliveries</h2>
+        </div>
         <RunFeed runs={myRuns ?? []} mode="my" />
       </section>
 
-      <section className="rounded-3xl border border-white/10 bg-brand.accent/10 p-6 text-sm text-brand.accent">
+      <section className="surface-card--muted border border-white/12 p-6 text-sm text-white/70">
         Stripe status: {profile?.stripeAccountStatus ?? 'pending verification'}. Complete onboarding to unlock instant payouts.
       </section>
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { clsx } from 'clsx';
 import type { Run } from '@/models/types';
 import { claimRun, markDelivered, markPickedUp } from '@/services/runService';
 
@@ -39,7 +40,7 @@ export const RunFeed = ({ runs, mode }: RunFeedProps) => {
 
   if (sortedRuns.length === 0) {
     return (
-      <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-400">
+      <div className="surface-card--muted p-6 text-sm text-white/60">
         {mode === 'available' ? 'No runs waiting to be claimed.' : 'You have no active runs right now.'}
       </div>
     );
@@ -54,17 +55,17 @@ export const RunFeed = ({ runs, mode }: RunFeedProps) => {
         const ordersCount = run.buyerOrderIds.length;
         const statusLabel = statusBadge[run.status];
         return (
-          <div key={run.id} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <div key={run.id} className="surface-card--muted border border-white/12 p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-white">{run.hallId}</p>
-                <p className="text-xs text-slate-400">{ordersCount} orders in pool</p>
+                <p className="text-xs text-white/45">{ordersCount} orders in pool</p>
               </div>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/80">
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                 {mode === 'available' ? 'Ready to claim' : statusLabel}
               </span>
             </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white/55">
               <p>Estimated payout: ${estimated.toFixed(2)}</p>
               {run.deliveryPin && <p>Delivery PIN: {run.deliveryPin}</p>}
             </div>
@@ -72,33 +73,38 @@ export const RunFeed = ({ runs, mode }: RunFeedProps) => {
               {mode === 'available' ? (
                 <button
                   onClick={() => claimRun(run.id)}
-                  className="rounded-full bg-brand.accent px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-900 shadow-lg shadow-emerald-500/40"
+                  className="rounded-full border border-white/12 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white hover:text-black"
                 >
                   Claim run
                 </button>
               ) : (
                 <>
-              {run.status === 'claimed' && (
-                <button
-                  onClick={() => markPickedUp(run.id)}
-                  className="rounded-full border border-white/15 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white hover:border-brand.accent hover:text-brand.accent"
-                >
-                  Mark picked up
-                </button>
+                  {run.status === 'claimed' && (
+                    <button
+                      onClick={() => markPickedUp(run.id)}
+                      className="rounded-full border border-white/12 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:border-white hover:bg-white hover:text-black"
+                    >
+                      Mark picked up
+                    </button>
+                  )}
+                  {run.status === 'inProgress' && (
+                    <button
+                      onClick={() => {
+                        const pin = prompt('Enter delivery PIN');
+                        if (pin) markDelivered(run.id, pin);
+                      }}
+                      className="rounded-full border border-white/12 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white hover:bg-white hover:text-black"
+                    >
+                      Mark delivered
+                    </button>
+                  )}
+                  {run.status === 'delivered' && (
+                    <span className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/50">
+                      Awaiting payout
+                    </span>
+                  )}
+                </>
               )}
-                {run.status === 'inProgress' && (
-                  <button
-                    onClick={() => {
-                      const pin = prompt('Enter delivery PIN');
-                      if (pin) markDelivered(run.id, pin);
-                    }}
-                    className="rounded-full bg-brand.accent px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-900 shadow-lg shadow-emerald-500/40"
-                  >
-                    Mark delivered
-                  </button>
-                )}
-              </>
-            )}
             </div>
           </div>
         );

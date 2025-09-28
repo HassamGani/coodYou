@@ -1,3 +1,5 @@
+'use client';
+
 import { addDoc, collection, limit, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';

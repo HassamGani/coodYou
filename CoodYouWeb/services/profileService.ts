@@ -1,3 +1,5 @@
+'use client';
+
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { UserProfile } from '@/models/types';

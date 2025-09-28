@@ -1,3 +1,5 @@
+'use client';
+
 import { collection, limit, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';

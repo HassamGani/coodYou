@@ -48,7 +48,7 @@ final class PaymentService {
             .collection("paymentMethods")
             .document(method.id)
         
-        try await docRef.setData(from: method)
+    try docRef.setData(from: method)
     }
     
     // MARK: - Delete Payment Method

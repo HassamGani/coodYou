@@ -214,7 +214,7 @@ final class AuthShellViewModel: ObservableObject {
         }
         // Use SchoolService instead of the removed SchoolDirectory helper
         try? await SchoolService.shared.ensureSchoolsLoaded()
-        guard let school = await SchoolService.shared.school(forEmail: trimmedEmail) else {
+        guard let school = SchoolService.shared.school(forEmail: trimmedEmail) else {
             inlineError = NSLocalizedString("auth.validation.school", comment: "Unsupported school")
             notifyHaptic(.warning)
             return
@@ -279,7 +279,7 @@ final class AuthShellViewModel: ObservableObject {
 
     private func map(error: Error) -> String {
         if let flowError = error as? AuthFlowError {
-            return flowError.localizedDescription ?? NSLocalizedString("auth.error.generic", comment: "Generic error")
+            return flowError.localizedDescription
         }
         return error.localizedDescription
     }

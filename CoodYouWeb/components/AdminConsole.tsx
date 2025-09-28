@@ -30,23 +30,28 @@ export const AdminConsole = ({ halls }: AdminConsoleProps) => {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-        <h3 className="text-lg font-semibold text-white">Dining halls</h3>
-        <p className="text-xs text-slate-400">Toggle service windows or adjust pricing on the fly.</p>
-        <div className="mt-4 space-y-3">
+      <section className="surface-card p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.32em] text-white/40">Dining halls</p>
+            <h3 className="text-lg font-semibold text-white">Override service windows</h3>
+            <p className="text-xs text-white/50">Update active windows mid-service to rebalance pools.</p>
+          </div>
+        </div>
+        <div className="mt-5 space-y-3">
           {halls.map((hall) => (
-            <div key={hall.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div key={hall.id} className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/80">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-white">{hall.name}</p>
-                  <p className="text-xs text-slate-400">{hall.isOpen ? 'Open' : 'Closed'}</p>
+                  <p className="text-xs text-white/45">{hall.isOpen ? 'Open' : 'Closed'}</p>
                 </div>
                 <div className="flex gap-2">
                   {(Object.keys(windowLabels) as ServiceWindowCode[]).map((code) => (
                     <button
                       key={code}
                       onClick={() => handleOverride(hall.id, code)}
-                      className="rounded-full border border-white/15 px-3 py-1 text-xs uppercase tracking-wide text-slate-200 hover:border-brand.accent hover:text-brand.accent"
+                      className="rounded-full border border-white/12 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/70 transition hover:border-white hover:bg-white hover:text-black"
                     >
                       {windowLabels[code]}
                     </button>
@@ -57,7 +62,7 @@ export const AdminConsole = ({ halls }: AdminConsoleProps) => {
           ))}
         </div>
       </section>
-      {status && <p className="text-xs text-slate-300">{status}</p>}
+      {status && <p className="text-xs text-white/60">{status}</p>}
     </div>
   );
 };

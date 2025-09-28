@@ -259,7 +259,7 @@ struct InputField: View {
     }
 
     private var borderColor: Color {
-        if let error {
+        if error != nil {
             return theme.colors.accentError.resolve(for: scheme).opacity(0.8)
         }
         return theme.colors.foregroundSecondary.resolve(for: scheme).opacity(0.12)

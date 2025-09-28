@@ -208,7 +208,7 @@ struct HomeView: View {
             }
         }
         .padding(.top, 12)
-        .onChange(of: viewModel.searchText) { newValue in
+        .onChange(of: viewModel.searchText) { _, newValue in
             // Debounce simple client-side: schedule search after slight delay
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
@@ -220,13 +220,15 @@ struct HomeView: View {
     }
 
     private var mapLayer: some View {
-        Map(
-            coordinateRegion: $region,
-            interactionModes: [.zoom, .pan],
-            showsUserLocation: true,
-            annotationItems: viewModel.selectedHall.map { [$0] } ?? []
-        ) { hall in
-            MapMarker(coordinate: hall.coordinate, tint: .accentColor)
+        // Use the annotationItems API so the Map always receives a collection (possibly empty)
+        let annotations = viewModel.selectedHall.map { [$0] } ?? []
+        return Map(coordinateRegion: $region, interactionModes: [.zoom, .pan], showsUserLocation: true, annotationItems: annotations) { hall in
+            // Use MapAnnotation to present a custom annotation view for the hall
+            MapAnnotation(coordinate: hall.coordinate) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(Color.accentColor)
+            }
         }
         .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
@@ -244,7 +246,7 @@ struct HomeView: View {
 
     private func hallDirectoryCard(for school: School) -> some View {
         let halls = viewModel.halls(for: school)
-        VStack(alignment: .leading, spacing: 16) {
+        let content = VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading) {
                     Text("Dining halls at \(school.displayName)")
@@ -287,6 +289,7 @@ struct HomeView: View {
         .padding(20)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: Color.black.opacity(0.08), radius: 20, y: 10)
+        return content
     }
 
     private func hallRow(for hall: DiningHall) -> some View {

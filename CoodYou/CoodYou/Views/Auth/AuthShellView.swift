@@ -72,7 +72,7 @@ struct AuthShellView: View {
         .sheet(isPresented: $showPrivacy) {
             LegalSheetView(titleKey: "auth.legal.privacy")
         }
-        .onChange(of: viewModel.state) { newValue in
+        .onChange(of: viewModel.state) { _, newValue in
             if newValue == .success {
                 Task { await finalizeSessionTransition() }
             }

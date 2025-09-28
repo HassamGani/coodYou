@@ -77,9 +77,9 @@ final class AppState: ObservableObject {
             currentUser = profile
             try? await SchoolService.shared.ensureSchoolsLoaded()
             // Prefer server-provided eligibleSchoolIds when deciding selection.
-            if let eligible = profile.eligibleSchoolIds, eligible.count > 0 {
+                if let eligible = profile.eligibleSchoolIds, eligible.count > 0 {
                 if eligible.count == 1 {
-                    selectedSchool = await SchoolService.shared.school(withId: eligible[0])
+                    selectedSchool = SchoolService.shared.school(withId: eligible[0])
                     sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
                 } else {
                     // Multiple eligible schools: user must choose which campus to operate in.
@@ -87,7 +87,7 @@ final class AppState: ObservableObject {
                     sessionPhase = .needsSchoolSelection
                 }
             } else if let schoolId = profile.schoolId {
-                selectedSchool = await SchoolService.shared.school(withId: schoolId)
+                selectedSchool = SchoolService.shared.school(withId: schoolId)
                 sessionPhase = selectedSchool == nil ? .needsSchoolSelection : .active
             } else {
                 selectedSchool = nil
@@ -106,14 +106,14 @@ final class AppState: ObservableObject {
                             // Re-evaluate selectedSchool based on server-populated fields
                             if let eligible = updated.eligibleSchoolIds, eligible.count > 0 {
                                 if eligible.count == 1 {
-                                    self.selectedSchool = await SchoolService.shared.school(withId: eligible[0])
+                                    self.selectedSchool = SchoolService.shared.school(withId: eligible[0])
                                     self.sessionPhase = self.selectedSchool == nil ? .needsSchoolSelection : .active
                                 } else {
                                     self.selectedSchool = nil
                                     self.sessionPhase = .needsSchoolSelection
                                 }
                             } else if let schoolId = updated.schoolId {
-                                self.selectedSchool = await SchoolService.shared.school(withId: schoolId)
+                                self.selectedSchool = SchoolService.shared.school(withId: schoolId)
                                 self.sessionPhase = self.selectedSchool == nil ? .needsSchoolSelection : .active
                             }
                         }

@@ -56,19 +56,6 @@ final class AuthService {
         // Create the Firebase auth user first
         let authResult = try await manager.auth.createUser(withEmail: normalizedEmail, password: password)
 
-        // Determine if the email maps to a participating school
-        var resolvedSchoolId: String? = nil
-        var canDash = false
-        if let schoolFromSelection = selectedSchool,
-           await SchoolService.shared.school(withId: schoolFromSelection.id) != nil,
-           schoolFromSelection.supports(email: normalizedEmail) {
-            resolvedSchoolId = schoolFromSelection.id
-            canDash = true
-        } else if let schoolByEmail = await SchoolService.shared.school(forEmail: normalizedEmail) {
-            resolvedSchoolId = schoolByEmail.id
-            canDash = true
-        }
-
     // Build a minimal profile to store client-managed fields. Protected fields (canDash, schoolId, etc.)
     // are authoritative server-side (cloud function). We include non-protected fields and return a local
     // representation; server will augment the doc when the auth trigger runs.
@@ -168,13 +155,21 @@ final class AuthService {
     }
 
     func ensureStripeOnboarding(for uid: String) async throws -> Bool {
-        let callable = manager.functions.httpsCallable("requestStripeOnboarding")
-        let result = try await callable.call(["uid": uid])
-        guard let data = result.data as? [String: Any],
-              let completed = data["completed"] as? Bool else {
-            return false
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+            let callable = manager.functions.httpsCallable("requestStripeOnboarding")
+            callable.call(["uid": uid]) { result, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let data = result?.data as? [String: Any],
+                      let completed = data["completed"] as? Bool else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                continuation.resume(returning: completed)
+            }
         }
-        return completed
     }
 
     func updateSettings(_ settings: UserSettings, for uid: String) async throws {
@@ -190,12 +185,20 @@ final class AuthService {
 
     func updateSchool(for uid: String, schoolId: String) async throws -> UserProfile {
         try await SchoolService.shared.ensureSchoolsLoaded()
-        guard let school = await SchoolService.shared.school(withId: schoolId) else {
+        guard await SchoolService.shared.school(withId: schoolId) != nil else {
             throw AuthError.missingSchoolSelection
         }
         // Request server to set the authoritative schoolId after verifying eligibility.
-        let callable = manager.functions.httpsCallable("requestSetSchool")
-        _ = try await callable.call(["uid": uid, "schoolId": schoolId])
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let callable = manager.functions.httpsCallable("requestSetSchool")
+            callable.call(["uid": uid, "schoolId": schoolId]) { result, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: ())
+            }
+        }
         let profile = try await fetchProfile(uid: uid)
         return profile
     }
@@ -207,8 +210,16 @@ final class AuthService {
         if let existing = try? await fetchProfile(uid: user.uid) {
             if existing.schoolId == nil, let schoolId {
                 // Ask server to set the authoritative schoolId if eligible.
-                let callable = manager.functions.httpsCallable("requestSetSchool")
-                _ = try? await callable.call(["uid": user.uid, "schoolId": schoolId])
+                let _ = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    let callable = manager.functions.httpsCallable("requestSetSchool")
+                    callable.call(["uid": user.uid, "schoolId": schoolId]) { result, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        continuation.resume(returning: ())
+                    }
+                }
                 // Fetch the profile again to get server-populated fields.
                 return try await fetchProfile(uid: user.uid)
             }
@@ -267,7 +278,7 @@ final class AuthService {
     /// completedRuns, stripeConnected, schoolId) are omitted so Firestore rules do not reject the write.
     private func saveClientProfile(_ profile: UserProfile) async throws {
         let document = manager.db.collection("users").document(profile.id)
-        var payload: [String: Any] = [
+        let payload: [String: Any] = [
             "id": profile.id,
             "firstName": profile.firstName,
             "lastName": profile.lastName,

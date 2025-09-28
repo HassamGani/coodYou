@@ -236,7 +236,7 @@ private final class ApplePayCoordinator: NSObject, PKPaymentAuthorizationControl
         let request = PKPaymentRequest()
         request.merchantIdentifier = "merchant.com.campusdash"
         request.supportedNetworks = [.visa, .masterCard, .amex]
-        request.merchantCapabilities = [.capability3DS]
+    request.merchantCapabilities = [.threeDSecure]
         request.countryCode = "US"
         request.currencyCode = "USD"
         request.paymentSummaryItems = [

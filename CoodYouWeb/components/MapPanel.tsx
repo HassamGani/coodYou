@@ -38,7 +38,7 @@ export const MapPanel = ({ halls, selectedHallId, onSelectHall }: MapPanelProps)
 
   if (!mapToken) {
     return (
-      <div className="flex h-full flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-center text-sm text-slate-400">
+      <div className="surface-card--muted flex h-full flex-col items-center justify-center p-10 text-center text-sm text-white/60">
         Provide a Mapbox access token via NEXT_PUBLIC_MAPBOX_TOKEN to enable the live map. Until then, hall cards remain fully functional.
       </div>
     );
@@ -49,8 +49,8 @@ export const MapPanel = ({ halls, selectedHallId, onSelectHall }: MapPanelProps)
       mapboxAccessToken={mapToken}
       viewState={viewState}
       onMove={(evt) => setViewState(evt.viewState)}
-      style={{ borderRadius: '1.5rem', width: '100%', height: '100%' }}
-      mapStyle="mapbox://styles/mapbox/dark-v11"
+      style={{ borderRadius: '28px', width: '100%', height: '100%' }}
+      mapStyle="mapbox://styles/mapbox/navigation-night-v1"
     >
       <NavigationControl position="top-left" />
       {halls.map((hall) => (
@@ -58,11 +58,13 @@ export const MapPanel = ({ halls, selectedHallId, onSelectHall }: MapPanelProps)
           <button
             type="button"
             onClick={() => onSelectHall?.(hall.id)}
-            className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold backdrop-blur ${
-              selectedHallId === hall.id ? 'bg-brand.accent text-slate-900' : 'bg-slate-900/70 text-white'
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              selectedHallId === hall.id
+                ? 'border-white bg-white text-black shadow-[0_12px_40px_rgba(0,0,0,0.28)]'
+                : 'border-white/20 bg-black/70 text-white/80 hover:border-white/40 hover:text-white'
             }`}
           >
-            <span className={`h-2.5 w-2.5 rounded-full ${hall.isOpen ? 'bg-brand.accent' : 'bg-slate-400'}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${hall.isOpen ? 'bg-[#32d583]' : 'bg-white/40'}`} />
             {hall.name}
           </button>
         </Marker>

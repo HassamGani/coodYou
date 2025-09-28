@@ -77,7 +77,7 @@ struct CodeEntryView: View {
             rawCode = viewModel.codeDigits.joined()
             isFieldFocused = true
         }
-        .onChange(of: rawCode) { newValue in
+        .onChange(of: rawCode) { _, newValue in
             syncCode(from: newValue)
         }
         .task(id: viewModel.codeDigits) {
