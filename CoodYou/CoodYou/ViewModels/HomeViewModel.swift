@@ -42,7 +42,10 @@ final class HomeViewModel: ObservableObject {
         let allHalls = DiningHallDirectory.all
         diningHalls = allHalls
         selectedHall = sortedHalls.first
-        Task { await bootstrapStatuses() }
+        Task {
+            await bootstrapStatuses()
+            await loadRemoteDiningHalls()
+        }
     }
 
     deinit {
@@ -277,40 +280,10 @@ final class HomeViewModel: ObservableObject {
                         fetchedSchools.append(school)
                     }
                 }
-
-                var fetchedHalls: [DiningHall] = []
-                let hallsSnap = try await db.collection("dining_halls")
-                    .whereField("active", isEqualTo: true)
-                    .getDocuments()
-                for doc in hallsSnap.documents {
-                    let d = doc.data()
-                    let hall = DiningHall(
-                        id: doc.documentID,
-                        name: d["name"] as? String ?? "",
-                        campus: d["campus"] as? String ?? "",
-                        latitude: d["latitude"] as? Double ?? 0,
-                        longitude: d["longitude"] as? Double ?? 0,
-                        active: d["active"] as? Bool ?? false,
-                        price: DiningHallPrice(
-                            breakfast: d["price_breakfast"] as? Double ?? 0,
-                            lunch: d["price_lunch"] as? Double ?? 0,
-                            dinner: d["price_dinner"] as? Double ?? 0
-                        ),
-                        geofenceRadius: d["geofenceRadius"] as? Double ?? 75,
-                        address: d["address"] as? String ?? "",
-                        dineOnCampusSiteId: d["dineOnCampusSiteId"] as? String,
-                        dineOnCampusLocationId: d["dineOnCampusLocationId"] as? String,
-                        affiliation: DiningHallAffiliation(rawValue: d["affiliation"] as? String ?? DiningHallAffiliation.columbia.rawValue) ?? .columbia,
-                        defaultOpenState: d["defaultOpenState"] as? Bool ?? true
-                    )
-                    if hall.name.lowercased().contains(lower) || hall.campus.lowercased().contains(lower) {
-                        fetchedHalls.append(hall)
-                    }
-                }
-
+                let hallMatches = await MainActor.run { strongSelf.filteredDiningHalls(matching: lower) }
                 await MainActor.run {
                     strongSelf.schoolResults = fetchedSchools
-                    strongSelf.hallResults = fetchedHalls
+                    strongSelf.hallResults = hallMatches
                     strongSelf.isSearching = false
                     // don't change selectedHall here; let the UI drive selection when user taps
                 }
@@ -326,11 +299,12 @@ final class HomeViewModel: ObservableObject {
     func halls(for school: School) -> [DiningHall] {
         let ids = Set(school.primaryDiningHallIds)
         if !ids.isEmpty {
-            return diningHalls.filter { ids.contains($0.id) }
+            let matched = diningHalls.filter { ids.contains($0.id) }
+            if !matched.isEmpty { return matched }
         }
 
         // Fallback: try to infer by affiliation or campus name when primaryDiningHallIds are not provided
-        let loweredName = (school.displayName + " " + school.name).lowercased()
+        let loweredName = (school.displayName + " " + school.name + " " + school.id).lowercased()
         if loweredName.contains("columbia") {
             return diningHalls.filter { $0.affiliation == .columbia }
         }
@@ -357,6 +331,118 @@ final class HomeViewModel: ObservableObject {
             self.hallResults = []
             self.isSearching = false
         }
+    }
+
+    private func loadRemoteDiningHalls() async {
+        do {
+            let documents = try await fetchDiningHallDocuments()
+            guard !documents.isEmpty else { return }
+
+            let remoteHalls = documents.compactMap { makeDiningHall(from: $0) }
+            guard !remoteHalls.isEmpty else { return }
+
+            diningHalls = remoteHalls
+
+            if let currentSelection = selectedHall {
+                selectedHall = remoteHalls.first(where: { $0.id == currentSelection.id }) ?? sortedHalls.first
+            } else {
+                selectedHall = sortedHalls.first
+            }
+
+            if let school = activeSchoolFilter {
+                hallResults = halls(for: school)
+            } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                hallResults = filteredDiningHalls(matching: searchText.lowercased())
+            }
+
+            await bootstrapStatuses()
+        } catch {
+            // Keep the static directory fallback when Firestore fetch fails.
+        }
+    }
+
+    private func fetchDiningHallDocuments() async throws -> [QueryDocumentSnapshot] {
+        let candidates = ["dining_halls", "diningHalls"]
+        for name in candidates {
+            do {
+                let snapshot = try await db.collection(name).getDocuments()
+                if !snapshot.documents.isEmpty {
+                    return snapshot.documents
+                }
+            } catch {
+                if name == candidates.last {
+                    throw error
+                }
+            }
+        }
+        return []
+    }
+
+    private func makeDiningHall(from document: QueryDocumentSnapshot) -> DiningHall? {
+        let data = document.data()
+        let isActive = (data["active"] as? Bool) ?? true
+        guard isActive else { return nil }
+
+        let latitude = doubleValue(data["latitude"]) ?? 0
+        let longitude = doubleValue(data["longitude"]) ?? 0
+        let radius = doubleValue(data["geofenceRadius"]) ?? doubleValue(data["geofence_radius"]) ?? 75
+
+        let breakfast = doubleValue(data["price_breakfast"]) ?? doubleValue(data["priceBreakfast"]) ?? DiningHallPrice.standard.breakfast
+        let lunch = doubleValue(data["price_lunch"]) ?? doubleValue(data["priceLunch"]) ?? DiningHallPrice.standard.lunch
+        let dinner = doubleValue(data["price_dinner"]) ?? doubleValue(data["priceDinner"]) ?? DiningHallPrice.standard.dinner
+
+        let affiliationValue = (data["affiliation"] as? String) ?? (data["campus"] as? String) ?? "columbia"
+        let loweredAffiliation = affiliationValue.lowercased()
+        let affiliation = DiningHallAffiliation(rawValue: loweredAffiliation)
+            ?? (loweredAffiliation.contains("barnard") ? .barnard : .columbia)
+
+        let defaultOpenState = (data["defaultOpenState"] as? Bool)
+            ?? (data["default_open_state"] as? Bool)
+            ?? true
+
+        return DiningHall(
+            id: document.documentID,
+            name: data["name"] as? String ?? document.documentID,
+            campus: data["campus"] as? String ?? "",
+            latitude: latitude,
+            longitude: longitude,
+            active: isActive,
+            price: DiningHallPrice(breakfast: breakfast, lunch: lunch, dinner: dinner),
+            geofenceRadius: radius,
+            address: data["address"] as? String ?? "",
+            dineOnCampusSiteId: data["dineOnCampusSiteId"] as? String ?? data["dine_on_campus_site_id"] as? String,
+            dineOnCampusLocationId: data["dineOnCampusLocationId"] as? String ?? data["dine_on_campus_location_id"] as? String,
+            affiliation: affiliation,
+            defaultOpenState: defaultOpenState
+        )
+    }
+
+    private func filteredDiningHalls(matching lowercasedQuery: String) -> [DiningHall] {
+        let trimmed = lowercasedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let tokens = trimmed.split(whereSeparator: { $0 == " " || $0 == "," }).map { String($0) }
+
+        return diningHalls.filter { hall in
+            let fields = [hall.name, hall.campus, hall.address].map { $0.lowercased() }
+            if fields.contains(where: { $0.contains(trimmed) }) {
+                return true
+            }
+            guard !tokens.isEmpty else { return false }
+            return fields.contains { field in
+                tokens.contains(where: { token in field.contains(token.lowercased()) })
+            }
+        }
+    }
+
+    private func doubleValue(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = value as? String {
+            return Double(string)
+        }
+        return nil
     }
 
     private func bucket(for hall: DiningHall) -> Int {
