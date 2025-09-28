@@ -41,7 +41,7 @@ final class HomeViewModel: ObservableObject {
 
     init() {
         diningHalls = hallService.halls
-        selectedHall = diningHalls.first
+        selectedHall = nil
 
         Task {
             do {
@@ -49,9 +49,6 @@ final class HomeViewModel: ObservableObject {
                 try await hallService.ensureHallsLoaded()
                 await MainActor.run {
                     self.diningHalls = self.hallService.halls
-                    if self.selectedHall == nil {
-                        self.selectedHall = self.diningHalls.first
-                    }
                     if let school = self.activeSchoolFilter {
                         self.hallResults = self.halls(for: school)
                     }
@@ -68,9 +65,6 @@ final class HomeViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] halls in
                 self?.diningHalls = halls
-                if self?.selectedHall == nil {
-                    self?.selectedHall = halls.first
-                }
             }
             .store(in: &cancellables)
     }
@@ -94,9 +88,8 @@ final class HomeViewModel: ObservableObject {
     }
 
     var hasResults: Bool {
-        if !schoolResults.isEmpty || !hallResults.isEmpty { return true }
-        if activeSchoolFilter != nil { return true }
-        return false
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !schoolResults.isEmpty
     }
 
     func status(for hall: DiningHall) -> DiningHallStatus {
@@ -337,7 +330,11 @@ final class HomeViewModel: ObservableObject {
         if !hallResults.isEmpty {
             return hallResults
         }
-        return diningHalls
+        return []
+    }
+
+    var shouldShowHallPanel: Bool {
+        activeSchoolFilter != nil && !hallResults.isEmpty
     }
 
     func activateSchool(_ school: School) {
@@ -345,9 +342,7 @@ final class HomeViewModel: ObservableObject {
         let hallsForSchool = halls(for: school)
         hallResults = hallsForSchool
         schoolResults = []
-        if let first = hallsForSchool.first {
-            selectedHall = first
-        }
+        selectedHall = nil
         isSearching = false
         ignoreSearchChanges = true
         searchText = ""
@@ -357,6 +352,12 @@ final class HomeViewModel: ObservableObject {
     func selectHall(_ hall: DiningHall) {
         selectedHall = hall
         activeSchoolFilter = school(for: hall)
+    }
+
+    func clearActiveSchool() {
+        activeSchoolFilter = nil
+        hallResults = []
+        selectedHall = nil
     }
 
     func clearSearch(preserveFilter: Bool = false) async {

@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var selectedHall: DiningHall?
     @State private var checkoutHall: DiningHall?
     @State private var showingHandoff = false
+    @State private var didApplyInitialSchool = false
 
     var body: some View {
         NavigationStack {
@@ -25,6 +26,14 @@ struct HomeView: View {
                 }
                 .padding(.top, 16)
                 .padding(.horizontal, 16)
+
+                if viewModel.shouldShowHallPanel {
+                    hallListPanel
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
 
                 if let order = viewModel.activeOrder, !order.isTerminal {
                     ActiveOrderOverlay(order: order) {
@@ -77,12 +86,6 @@ struct HomeView: View {
                 region.center = hall.coordinate
             }
             viewModel.subscribeToPool()
-            if let school = appState.selectedSchool {
-                viewModel.activateSchool(school)
-                if let anchor = viewModel.halls(for: school).first {
-                    region.center = anchor.coordinate
-                }
-            }
         }
         .onChange(of: appState.currentUser?.id) { _, newValue in
             guard let newValue else { return }
@@ -103,6 +106,10 @@ struct HomeView: View {
             }
         }
         .onChange(of: appState.selectedSchool) { _, newSchool in
+            if !didApplyInitialSchool {
+                didApplyInitialSchool = true
+                return
+            }
             if let school = newSchool {
                 viewModel.activateSchool(school)
                 if let anchor = viewModel.halls(for: school).first {
@@ -187,28 +194,6 @@ struct HomeView: View {
                                 }
                             }
                         }
-                        if !viewModel.hallResults.isEmpty {
-                            Section(header: resultsHeader(title: "Dining Halls")) {
-                                ForEach(viewModel.hallResults) { hall in
-                                    Button {
-                                        viewModel.selectHall(hall)
-                                        Task {
-                                            await viewModel.clearSearch(preserveFilter: true)
-                                            await viewModel.loadMenuIfNeeded(for: hall)
-                                        }
-                                        selectedHall = hall
-                                        withAnimation(.easeInOut(duration: 0.35)) {
-                                            region.center = hall.coordinate
-                                        }
-                                    } label: {
-                                        resultRow(title: hall.name,
-                                                  subtitle: hall.address,
-                                                  icon: "fork.knife")
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
                     }
                 }
                 .padding(12)
@@ -264,6 +249,75 @@ struct HomeView: View {
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(Color.accentColor)
             )
+    }
+
+    private var hallListPanel: some View {
+        VStack(spacing: 16) {
+            if let school = viewModel.activeSchoolFilter {
+                HStack(spacing: 12) {
+                    SchoolIconView(school: school, size: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(school.displayName)
+                            .font(.headline)
+                        Text("Tap a dining hall to explore menus and pin it on the map.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        Task { await viewModel.clearSearch(preserveFilter: false) }
+                        viewModel.clearActiveSchool()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .imageScale(.medium)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("Close hall panel")
+                }
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(viewModel.hallResults) { hall in
+                        Button {
+                            viewModel.selectHall(hall)
+                            Task {
+                                await viewModel.loadMenuIfNeeded(for: hall)
+                            }
+                            selectedHall = hall
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                region.center = hall.coordinate
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundStyle(accentColor(for: hall.schoolId))
+                                    .imageScale(.large)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(hall.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(hall.address)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(12)
+                            .background(Color(.systemBackground).opacity(0.92), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 280)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 24, y: 16)
     }
 
     private func schoolRowResult(school: School) -> some View {

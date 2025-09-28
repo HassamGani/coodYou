@@ -61,7 +61,11 @@ final class DiningHallService: ObservableObject {
             var halls = fetched
             let existingIds = Set(halls.map { $0.id })
             let fallbacks = DiningHallStaticData.entries
-                .filter { !existingIds.contains($0.id) }
+                .filter { entry in
+                    guard !existingIds.contains(entry.id) else { return false }
+                    guard entry.latitude.distance(to: 0) == 0 || entry.longitude.distance(to: 0) == 0 else { return true }
+                    return true
+                }
                 .map { $0.makeDiningHall() }
             halls.append(contentsOf: fallbacks)
             applyCache(with: halls)
