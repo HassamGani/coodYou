@@ -188,7 +188,7 @@ struct AdminDashboardView: View {
         defer { isLoading = false }
         do {
             let snapshot = try await FirebaseManager.shared.db.collection("dining_halls").getDocuments()
-            let halls = snapshot.documents.map { doc -> DiningHall in
+            let halls = try snapshot.documents.map { doc -> DiningHall in
                 let data = doc.data()
                 return DiningHall(
                     id: doc.documentID,
@@ -272,18 +272,8 @@ struct AdminDashboardView: View {
     @MainActor
     private func triggerReprice() async {
         do {
-            try await withCheckedThrowingContinuation { continuation in
-                let callable = FirebaseManager.shared.functions.httpsCallable("repriceDiningWindow")
-                Task {
-                    do {
-                        let result = try await callable.call([:])
-                        _ = result // Handle the result
-                        continuation.resume()
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
+            let callable = FirebaseManager.shared.functions.httpsCallable("repriceDiningWindow")
+            _ = try await callable.call([:])
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -293,18 +283,8 @@ struct AdminDashboardView: View {
     private func dissolvePairs() async {
         guard let hall = selectedHall else { return }
         do {
-            try await withCheckedThrowingContinuation { continuation in
-                let callable = FirebaseManager.shared.functions.httpsCallable("dissolvePairs")
-                Task {
-                    do {
-                        let result = try await callable.call(["hallId": hall.id])
-                        _ = result // Handle the result
-                        continuation.resume()
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
+            let callable = FirebaseManager.shared.functions.httpsCallable("dissolvePairs")
+            _ = try await callable.call(["hallId": hall.id])
         } catch {
             errorMessage = error.localizedDescription
         }

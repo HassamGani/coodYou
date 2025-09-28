@@ -286,3 +286,4 @@ struct EmailSignUpView: View {
         return "Use your campus email to continue."
     }
 }
+}

@@ -32,6 +32,29 @@ final class CoodYouUITests: XCTestCase {
     }
 
     @MainActor
+    func testAuthEmailValidation() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let emailField = app.textFields["auth.emailField"]
+        XCTAssertTrue(emailField.waitForExistence(timeout: 2))
+        emailField.tap()
+        emailField.typeText("invalid")
+
+        let passwordField = app.secureTextFields["auth.passwordField"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 1))
+        passwordField.tap()
+        passwordField.typeText("secret123")
+
+        let primaryButton = app.buttons["auth.primaryButton"]
+        XCTAssertTrue(primaryButton.waitForExistence(timeout: 1))
+        primaryButton.tap()
+
+        let inlineError = app.otherElements["auth.inlineError"]
+        XCTAssertTrue(inlineError.waitForExistence(timeout: 1))
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

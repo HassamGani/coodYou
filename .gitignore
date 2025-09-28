@@ -1,1 +1,22 @@
+# Node
+CoodYouWeb/node_modules
+CoodYouWeb/.next
+CoodYouWeb/out
+CoodYouWeb/.env.local
+
+# macOS
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase emulator data
+firebase-debug.log
+
+# Swift build artifacts
+DerivedData
+
+# Scripts
 randoScripts

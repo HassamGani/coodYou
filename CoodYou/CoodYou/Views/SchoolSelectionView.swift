@@ -34,7 +34,18 @@ struct SchoolSelectionView: View {
                     .font(.headline)
                 Text(emailDomainsText(for: school))
                     .font(.caption)
+    @State private var selectedSchool: School = SchoolDirectory.columbia
+
+    var body: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 12) {
+                Text("Choose your campus")
+                    .font(.largeTitle.weight(.bold))
+                Text("CampusDash is piloting at Columbia and Barnard. Pick your school to unlock dining halls, geofences, and notifications.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 32)
             }
             Spacer()
             if selectedSchool?.id == school.id {
@@ -88,12 +99,53 @@ struct SchoolSelectionView: View {
         }
         .disabled(isUpdating || selectedSchool == nil)
     }
+            .padding(.top, 60)
 
-    var body: some View {
-        VStack(spacing: 24) {
-            headerSection
-            schoolList
-            continueButton
+            List {
+                ForEach(SchoolDirectory.all, id: \.id) { school in
+                    HStack {
+                        Image(systemName: school.campusIconName)
+                            .frame(width: 32)
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(school.name)
+                                .font(.headline)
+                            Text(school.allowedEmailDomains.map { "@\($0)" }.joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if selectedSchool.id == school.id {
+                            Image(systemName: "checkmark")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedSchool = school
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+
+            Button {
+                Task { await updateSchool() }
+            } label: {
+                if isUpdating {
+                    ProgressView()
+                } else {
+                    Text("Continue")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal, 24)
+                }
+            }
+            .disabled(isUpdating)
             Spacer()
         }
         .navigationBarHidden(true)

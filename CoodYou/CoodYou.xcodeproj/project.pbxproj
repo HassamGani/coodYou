@@ -16,6 +16,7 @@
 		D306E47B2E886AA2004D7C35 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D306E47A2E886AA2004D7C35 /* FirebaseMessaging */; };
 		D306E47D2E886AD9004D7C35 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = D306E47C2E886AD9004D7C35 /* FirebaseAuth */; };
 		D306E47F2E886B3A004D7C35 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = D306E47E2E886B3A004D7C35 /* FirebaseFunctions */; };
+		D306E4DF2E88C93C004D7C35 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = D306E4802E886C00004D7C35 /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,9 +42,22 @@
 		D306E4012E8862F2004D7C35 /* CoodYouUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoodYouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D306E55B2E88DEFE004D7C35 /* Exceptions for "CoodYou" folder in "CoodYou" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D306E3E92E8862F1004D7C35 /* CoodYou */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D306E3EC2E8862F1004D7C35 /* CoodYou */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D306E55B2E88DEFE004D7C35 /* Exceptions for "CoodYou" folder in "CoodYou" target */,
+			);
 			path = CoodYou;
 			sourceTree = "<group>";
 		};
@@ -64,6 +78,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D306E4DF2E88C93C004D7C35 /* GoogleSignIn in Frameworks */,
 				D306E4422E886564004D7C35 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
 				D306E43E2E886564004D7C35 /* FirebaseAnalytics in Frameworks */,
 				D306E47B2E886AA2004D7C35 /* FirebaseMessaging in Frameworks */,
@@ -150,6 +165,7 @@
 				D306E47A2E886AA2004D7C35 /* FirebaseMessaging */,
 				D306E47C2E886AD9004D7C35 /* FirebaseAuth */,
 				D306E47E2E886B3A004D7C35 /* FirebaseFunctions */,
+				D306E4802E886C00004D7C35 /* GoogleSignIn */,
 			);
 			productName = CoodYou;
 			productReference = D306E3EA2E8862F1004D7C35 /* CoodYou.app */;
@@ -235,6 +251,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D306E43A2E886564004D7C35 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				D306E4812E886C00004D7C35 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D306E3EB2E8862F1004D7C35 /* Products */;
@@ -441,6 +458,7 @@
 				DEVELOPMENT_TEAM = THWRJU239D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CoodYou/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -469,6 +487,7 @@
 				DEVELOPMENT_TEAM = THWRJU239D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CoodYou/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -609,6 +628,14 @@
 				minimumVersion = 12.3.0;
 			};
 		};
+		D306E4812E886C00004D7C35 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -656,6 +683,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D306E43A2E886564004D7C35 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFunctions;
+		};
+		D306E4802E886C00004D7C35 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D306E4812E886C00004D7C35 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

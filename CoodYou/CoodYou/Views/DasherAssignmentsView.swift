@@ -185,17 +185,6 @@ private struct RunCard: View {
     private var ordersSubtitle: String {
         "\(run.orders.count) orders · PIN \(run.deliveryPin ?? "••••")"
     }
-    
-    private func progressValue(for status: RunStatus) -> Double {
-        switch status {
-        case .requested, .pooled: return 0.1
-        case .readyToAssign: return 0.2
-        case .claimed: return 0.4
-        case .inProgress: return 0.7
-        case .delivered, .paid, .closed: return 1.0
-        case .expired, .cancelledBuyer, .cancelledDasher, .disputed, .cancelled: return 0.5
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -211,13 +200,13 @@ private struct RunCard: View {
                 VStack(alignment: .trailing) {
                     Text(payout)
                         .font(.title3.weight(.semibold))
-                    Text(run.status.rawValue.capitalized)
+                    Text(run.status.displayLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            ProgressView(value: progressValue(for: run.status))
+            ProgressView(value: run.status.progressValue)
                 .tint(.accentColor)
 
             if let action {
@@ -302,11 +291,11 @@ private struct RunDetailSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Status timeline")
                 .font(.headline)
-            ForEach(RunStatus.allCases, id: \.rawValue) { status in
+            ForEach(RunStatus.allCases, id: \.self) { status in
                 HStack(alignment: .center, spacing: 12) {
                     Image(systemName: run.status == status ? "largecircle.fill.circle" : "circle")
-                        .foregroundColor(run.status == status ? Color.accentColor : .secondary)
-                    Text(status.description)
+                        .foregroundStyle(run.status == status ? Color.accentColor : Color.secondary)
+                    Text(status.displayLabel)
                         .foregroundStyle(status == run.status ? .primary : .secondary)
                 }
             }
@@ -350,4 +339,3 @@ private enum RunAction: Hashable {
         }
     }
 }
-
