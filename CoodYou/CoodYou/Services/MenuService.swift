@@ -37,7 +37,7 @@ actor MenuService {
             )
         }
 
-        let dateString = MenuService.dateFormatter.string(from: date)
+        let dateString = Self.dateFormatter.string(from: date)
         async let todaysMenuTask = fetchTodaysMenu(siteId: siteId, date: dateString)
         async let locationsPublicTask = fetchLocationsPublic(siteId: siteId)
 
@@ -64,13 +64,13 @@ actor MenuService {
         let statusMessage = locationPublic?.status?.message
         let isOpen = locationPublic?.status?.isOpen ?? hall.defaultOpenState
         let scheduleMap = locationPublic?.publishedPeriodTimes ?? [:]
-        let fallback = MenuService.fallbackSchedule(for: date)
+        let fallback = Self.fallbackSchedule(for: date)
         let schedule = scheduleMap.isEmpty ? fallback : scheduleMap
 
         let periodNames = locationEntry.periods.compactMap { $0.name }
-        let now = MenuService.currentTime(in: MenuService.timeZone, for: date)
-        let activePeriod = MenuService.chooseCurrentPeriod(periodNames: periodNames, schedule: schedule, reference: now)
-        let periodRangeText = activePeriod.flatMap { MenuService.formatRange(start: $0.start, end: $0.end, on: date) }
+        let now = Self.currentTime(in: Self.timeZone, for: date)
+        let activePeriod = Self.chooseCurrentPeriod(periodNames: periodNames, schedule: schedule, reference: now)
+        let periodRangeText = activePeriod.flatMap { Self.formatRange(start: $0.start, end: $0.end, on: date) }
 
         let menuPeriod = activePeriod.flatMap { periodInfo in
             locationEntry.periods.first { $0.name == periodInfo.name }
@@ -78,14 +78,14 @@ actor MenuService {
 
         let mealPeriodModel: DiningHallMenu.MealPeriod?
         if let period = menuPeriod, let name = period.name {
-            let times = activePeriod ?? MenuService.chooseCurrentPeriod(periodNames: [name], schedule: schedule, reference: now)
-            let formattedRange = times.flatMap { MenuService.formatRange(start: $0.start, end: $0.end, on: date) }
-            let startTime = times.flatMap { MenuService.timeFormatter.date(from: $0.start) }
-            let endTime = times.flatMap { MenuService.timeFormatter.date(from: $0.end) }
+            let times = activePeriod ?? Self.chooseCurrentPeriod(periodNames: [name], schedule: schedule, reference: now)
+            let formattedRange = times.flatMap { Self.formatRange(start: $0.start, end: $0.end, on: date) }
+            let startDate = times.flatMap { Self.timeFormatter.date(from: $0.start) }
+            let endDate = times.flatMap { Self.timeFormatter.date(from: $0.end) }
             mealPeriodModel = DiningHallMenu.MealPeriod(
                 name: name,
-                start: startTime,
-                end: endTime,
+                start: startDate,
+                end: endDate,
                 formattedRange: formattedRange
             )
         } else {
@@ -256,7 +256,7 @@ private extension MenuService {
     static func chooseCurrentPeriod(periodNames: [String], schedule: [String: (String, String)], reference: Date) -> (name: String, start: String, end: String)? {
         for name in periodNames {
             guard let window = schedule[name] else { continue }
-            if MenuService.time(reference, isBetween: window.0, and: window.1) {
+            if time(reference, isBetween: window.0, and: window.1) {
                 return (name, window.0, window.1)
             }
         }
@@ -264,14 +264,14 @@ private extension MenuService {
     }
 
     static func time(_ reference: Date, isBetween start: String, and end: String) -> Bool {
-        guard let startDate = MenuService.timeFormatter.date(from: start), let endDate = MenuService.timeFormatter.date(from: end) else {
+        guard let startDate = timeFormatter.date(from: start), let endDate = timeFormatter.date(from: end) else {
             return false
         }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = MenuService.timeZone
+        calendar.timeZone = timeZone
         let startComponents = calendar.dateComponents([.hour, .minute], from: startDate)
         let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
-        let referenceComponents = calendar.dateComponents(in: MenuService.timeZone, from: reference)
+        let referenceComponents = calendar.dateComponents(in: timeZone, from: reference)
         let referenceDate = calendar.date(from: referenceComponents) ?? reference
         let startOfDay = calendar.startOfDay(for: referenceDate)
 
@@ -289,13 +289,13 @@ private extension MenuService {
 
     static func formatRange(start: String?, end: String?, on date: Date) -> String? {
         guard let start, let end,
-              let startDate = MenuService.timeFormatter.date(from: start),
-              let endDate = MenuService.timeFormatter.date(from: end) else {
+              let startDate = timeFormatter.date(from: start),
+              let endDate = timeFormatter.date(from: end) else {
             return nil
         }
 
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = MenuService.timeZone
+        calendar.timeZone = timeZone
         let startComponents = calendar.dateComponents([.hour, .minute], from: startDate)
         let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
 
@@ -307,29 +307,29 @@ private extension MenuService {
             return nil
         }
 
-        return "\(MenuService.displayFormatter.string(from: actualStart)) – \(MenuService.displayFormatter.string(from: actualEnd))"
+        return "\(displayFormatter.string(from: actualStart)) – \(displayFormatter.string(from: actualEnd))"
     }
 
-    private func fetchTodaysMenu(siteId: String, date: String) async throws -> TodaysMenuResponse {
+    func fetchTodaysMenu(siteId: String, date: String) async throws -> TodaysMenuResponse {
         var components = URLComponents(url: apiBase.appendingPathComponent("sites/todays_menu"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "siteId", value: siteId),
             URLQueryItem(name: "date", value: date)
         ]
-        let request = self.buildRequest(url: components.url!)
+        let request = buildRequest(url: components.url!)
         let (data, _) = try await session.data(for: request)
         return try jsonDecoder.decode(TodaysMenuResponse.self, from: data)
     }
 
-    private func fetchLocationsPublic(siteId: String) async throws -> LocationsPublicResponse {
+    func fetchLocationsPublic(siteId: String) async throws -> LocationsPublicResponse {
         var components = URLComponents(url: apiBase.appendingPathComponent("sites/\(siteId)/locations-public"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "for_map", value: "true")]
-        let request = self.buildRequest(url: components.url!)
+        let request = buildRequest(url: components.url!)
         let (data, _) = try await session.data(for: request)
         return try jsonDecoder.decode(LocationsPublicResponse.self, from: data)
     }
 
-    private func buildRequest(url: URL) -> URLRequest {
+    func buildRequest(url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         headers.forEach { key, value in

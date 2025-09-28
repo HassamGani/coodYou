@@ -159,12 +159,13 @@ struct AddPaymentMethodSheet: View {
         let coordinator = ApplePayCoordinator()
         do {
             let payment = try await coordinator.present()
+            let displayGivenName = payment.billingContact?.name?.givenName ?? ""
             let method = PaymentMethod(
                 id: UUID().uuidString,
                 userId: uid,
                 type: .applePay,
                 displayName: "Apple Pay",
-                details: "Linked for \(payment.billingContact?.name?.givenName ?? "")",
+                details: displayGivenName.isEmpty ? "Linked via Apple Pay" : "Linked for \(displayGivenName)",
                 last4: nil,
                 isDefault: true,
                 createdAt: Date()
@@ -235,7 +236,7 @@ private final class ApplePayCoordinator: NSObject, PKPaymentAuthorizationControl
         let request = PKPaymentRequest()
         request.merchantIdentifier = "merchant.com.campusdash"
         request.supportedNetworks = [.visa, .masterCard, .amex]
-        request.merchantCapabilities = [.threeDSecure]
+        request.merchantCapabilities = [.capability3DS]
         request.countryCode = "US"
         request.currencyCode = "USD"
         request.paymentSummaryItems = [

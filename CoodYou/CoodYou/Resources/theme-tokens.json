@@ -1,0 +1,28 @@
+{
+  "color": {
+    "bg.base": "#FFFFFF",
+    "fg.primary": "#1A1A1A",
+    "fg.secondary": "#666666",
+    "accent.primary": "#0A84FF",
+    "accent.success": "#34C759",
+    "accent.warning": "#FFD60A",
+    "accent.error": "#FF3B30"
+  },
+  "radius": {
+    "control": 16,
+    "sheet": 28
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32
+  },
+  "type": {
+    "titleXL": { "size": 34, "weight": "semibold", "lineHeight": 41 },
+    "titleM": { "size": 22, "weight": "semibold", "lineHeight": 26 },
+    "body": { "size": 17, "weight": "regular", "lineHeight": 22 },
+    "caption": { "size": 13, "weight": "regular", "lineHeight": 18 }
+  }
+}

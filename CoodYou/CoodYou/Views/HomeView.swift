@@ -102,17 +102,7 @@ struct HomeView: View {
             showsUserLocation: true,
             annotationItems: viewModel.selectedHall.map { [$0] } ?? []
         ) { hall in
-            MapAnnotation(coordinate: hall.coordinate) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 20, height: 20)
-                    
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
-                }
-            }
+            MapMarker(coordinate: hall.coordinate, tint: .accentColor)
         }
         .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
@@ -281,19 +271,5 @@ private struct ActiveOrderCard: View {
         .padding(18)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: Color.black.opacity(0.08), radius: 20, y: 10)
-    }
-}
-
-private extension OrderStatus {
-    var progressValue: Double {
-        switch self {
-        case .requested: return 0.1
-        case .pooled: return 0.25
-        case .readyToAssign: return 0.4
-        case .claimed: return 0.6
-        case .inProgress: return 0.8
-        case .delivered, .paid, .closed: return 1
-        case .expired, .cancelledBuyer, .cancelledDasher, .disputed: return 0.5
-        }
     }
 }

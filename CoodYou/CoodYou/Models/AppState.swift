@@ -51,6 +51,11 @@ final class AppState: ObservableObject {
     }
 
     @MainActor
+    func refreshSession() async {
+        await handleAuthStateChange(user: FirebaseManager.shared.auth.currentUser)
+    }
+
+    @MainActor
     private func handleAuthStateChange(user: FirebaseAuth.User?) async {
         paymentTask?.cancel()
         paymentTask = nil
@@ -77,13 +82,17 @@ final class AppState: ObservableObject {
 
     private func attachPaymentStream(for uid: String) {
         paymentTask?.cancel()
-        paymentTask = Task { @MainActor [weak self] in
+        paymentTask = Task { [weak self] in
             do {
                 for try await methods in PaymentService.shared.observePaymentMethods(for: uid) {
-                    self?.paymentMethods = methods
+                    await MainActor.run {
+                        self?.paymentMethods = methods
+                    }
                 }
             } catch {
-                self?.paymentMethods = []
+                await MainActor.run {
+                    self?.paymentMethods = []
+                }
             }
         }
     }

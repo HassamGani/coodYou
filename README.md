@@ -3,6 +3,7 @@
 This repository contains the Firebase-backed implementation of the CampusDash MVP. It includes:
 
 - **iOS app** built with SwiftUI integrating Firebase Auth, Firestore, Functions, and Messaging.
+- **Web app** built with Next.js and Tailwind that mirrors the Uber-style dispatcher for CampusDash.
 - **Firebase Cloud Functions** for order pooling, run assignment, dasher workflows, and Stripe onboarding scaffolding.
 - **Firestore rules and indexes** tuned for the marketplace flows.
 - **Configuration** for dining hall seed data and Firebase emulator usage.
@@ -19,6 +20,7 @@ This repository contains the Firebase-backed implementation of the CampusDash MV
 ```
 .
 ├── CoodYou/CoodYou          # SwiftUI client (Xcode project folder)
+├── CoodYouWeb               # Next.js web client (Firebase + Mapbox UI)
 ├── functions                # Firebase Cloud Functions (TypeScript)
 ├── firestore.rules          # Firestore security rules
 ├── firestore.indexes.json   # Required composite indexes
@@ -102,6 +104,40 @@ firebase functions:config:set stripe.secret_key="sk_live_..." platform.fee_defau
 ```
 
 Access them in code via `functions.config().stripe.secret_key`.
+
+## Web app setup (Next.js)
+
+1. Install dependencies:
+
+   ```bash
+   cd CoodYouWeb
+   npm install
+   ```
+
+2. Create a `.env.local` file in `CoodYouWeb/` with your Firebase config and optional Mapbox token:
+
+   ```bash
+   NEXT_PUBLIC_FIREBASE_API_KEY=...
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+   NEXT_PUBLIC_FIREBASE_APP_ID=...
+   NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
+   NEXT_PUBLIC_FIREBASE_REGION=us-central1
+   NEXT_PUBLIC_MAPBOX_TOKEN=pk.ey...
+   ```
+
+   Set `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` to target the Firebase Emulator Suite during local development.
+
+3. Run the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+   The app bootstraps Firebase Auth for Columbia/Barnard .edu addresses, renders the Uber-style dispatcher, dasher console,
+   wallet, and admin controls, and shares the same Firestore collections/functions as the iOS client.
 
 ## Security considerations
 

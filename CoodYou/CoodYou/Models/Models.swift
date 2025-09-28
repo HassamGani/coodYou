@@ -151,35 +151,46 @@ struct Run: Identifiable, Codable {
 }
 
 enum RunStatus: String, Codable, CaseIterable {
-    case requested
-    case pooled
     case readyToAssign
     case claimed
     case inProgress
     case delivered
     case paid
     case closed
-    case expired
-    case cancelledBuyer
-    case cancelledDasher
-    case disputed
     case cancelled
     
-    var description: String {
+    var displayLabel: String {
         switch self {
-        case .requested: return "Requested"
-        case .pooled: return "Pooled"
-        case .readyToAssign: return "Ready to assign"
+        case .readyToAssign: return "Available"
         case .claimed: return "Claimed"
         case .inProgress: return "In progress"
         case .delivered: return "Delivered"
         case .paid: return "Paid"
         case .closed: return "Closed"
-        case .expired: return "Expired"
-        case .cancelledBuyer: return "Cancelled by buyer"
-        case .cancelledDasher: return "Cancelled by dasher"
-        case .disputed: return "Disputed"
         case .cancelled: return "Cancelled"
+        }
+    }
+    
+    var progressValue: Double {
+        switch self {
+        case .readyToAssign: return 0.1
+        case .claimed: return 0.35
+        case .inProgress: return 0.7
+        case .delivered: return 0.9
+        case .paid, .closed: return 1
+        case .cancelled: return 0
+        }
+    }
+
+    var sortIndex: Int {
+        switch self {
+        case .readyToAssign: return 0
+        case .claimed: return 1
+        case .inProgress: return 2
+        case .delivered: return 3
+        case .paid: return 4
+        case .closed: return 5
+        case .cancelled: return 6
         }
     }
 }
@@ -310,6 +321,18 @@ struct School: Identifiable, Codable, Hashable {
 }
 
 extension OrderStatus {
+    var progressValue: Double {
+        switch self {
+        case .requested: return 0.1
+        case .pooled: return 0.25
+        case .readyToAssign: return 0.4
+        case .claimed: return 0.6
+        case .inProgress: return 0.8
+        case .delivered, .paid, .closed: return 1
+        case .expired, .cancelledBuyer, .cancelledDasher, .disputed: return 0.5
+        }
+    }
+
     var buyerFacingLabel: String {
         switch self {
         case .requested: return "Waiting for a match"
