@@ -57,9 +57,9 @@ struct ServiceWindowConfig: Codable {
         var endHour: Int
     }
 
-    let breakfast: WindowRange
-    let lunch: WindowRange
-    let dinner: WindowRange
+    var breakfast: WindowRange
+    var lunch: WindowRange
+    var dinner: WindowRange
 
     static var `default`: ServiceWindowConfig {
         ServiceWindowConfig(
@@ -151,13 +151,37 @@ struct Run: Identifiable, Codable {
 }
 
 enum RunStatus: String, Codable, CaseIterable {
+    case requested
+    case pooled
     case readyToAssign
     case claimed
     case inProgress
     case delivered
     case paid
     case closed
+    case expired
+    case cancelledBuyer
+    case cancelledDasher
+    case disputed
     case cancelled
+    
+    var description: String {
+        switch self {
+        case .requested: return "Requested"
+        case .pooled: return "Pooled"
+        case .readyToAssign: return "Ready to assign"
+        case .claimed: return "Claimed"
+        case .inProgress: return "In progress"
+        case .delivered: return "Delivered"
+        case .paid: return "Paid"
+        case .closed: return "Closed"
+        case .expired: return "Expired"
+        case .cancelledBuyer: return "Cancelled by buyer"
+        case .cancelledDasher: return "Cancelled by dasher"
+        case .disputed: return "Disputed"
+        case .cancelled: return "Cancelled"
+        }
+    }
 }
 
 struct PaymentRecord: Identifiable, Codable {

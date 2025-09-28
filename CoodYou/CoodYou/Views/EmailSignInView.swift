@@ -8,42 +8,132 @@ struct EmailSignInView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        Form {
-            Section("Email") {
-                TextField("UNI@columbia.edu", text: $email)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.username)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-            }
-
-            Section {
-                Button {
-                    Task { await signIn() }
-                } label: {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text("Sign in")
-                            .frame(maxWidth: .infinity)
+        GeometryReader { geometry in
+            ZStack {
+                // Background
+                LinearGradient(
+                    colors: [
+                        Color.black,
+                        Color.black.opacity(0.95),
+                        Color.blue.opacity(0.1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // Top spacer
+                        Spacer()
+                            .frame(height: geometry.safeAreaInsets.top + 40)
+                        
+                        // Header
+                        headerSection
+                        
+                        Spacer()
+                            .frame(height: 60)
+                        
+                        // Form
+                        formSection
+                        
+                        Spacer()
+                            .frame(height: 32)
+                        
+                        // Actions
+                        actionSection
+                        
+                        // Bottom spacer
+                        Spacer()
+                            .frame(height: geometry.safeAreaInsets.bottom + 40)
                     }
                 }
-                .disabled(!formIsValid || isLoading)
-
-                Button("Forgot password?") {
-                    Task { await sendReset() }
-                }
-                .disabled(email.isEmpty)
             }
         }
-        .navigationTitle("Sign in")
+        .navigationBarHidden(true)
         .alert(item: Binding(
             get: { errorMessage.map(ErrorMessage.init(value:)) },
             set: { errorMessage = $0?.value }
         )) { message in
             Alert(title: Text("Sign in"), message: Text(message.value), dismissButton: .default(Text("OK")))
+        }
+    }
+    
+    private var headerSection: some View {
+        VStack(spacing: 16) {
+            // Back button
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            
+            // Title
+            VStack(spacing: 12) {
+                Text("Welcome back")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                
+                Text("Sign in to your CampusDash account")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+    
+    private var formSection: some View {
+        VStack(spacing: 24) {
+            UberTextField(
+                title: "Campus Email",
+                placeholder: "UNI@columbia.edu",
+                text: $email,
+                keyboardType: .emailAddress,
+                textContentType: .username,
+                autocapitalization: .never,
+                disableAutocorrection: true
+            )
+            
+            UberTextField(
+                title: "Password",
+                placeholder: "Enter your password",
+                text: $password,
+                isSecure: true,
+                textContentType: .password
+            )
+        }
+        .padding(.horizontal, 24)
+    }
+    
+    private var actionSection: some View {
+        VStack(spacing: 20) {
+            UberButton(
+                title: "Sign in",
+                isLoading: isLoading,
+                isDisabled: !formIsValid || isLoading
+            ) {
+                Task { await signIn() }
+            }
+            .padding(.horizontal, 24)
+            
+            Button("Forgot password?") {
+                Task { await sendReset() }
+            }
+            .font(.system(size: 16, weight: .medium))
+            .foregroundColor(.white.opacity(0.9))
+            .disabled(email.isEmpty)
+            .opacity(email.isEmpty ? 0.5 : 1.0)
         }
     }
 

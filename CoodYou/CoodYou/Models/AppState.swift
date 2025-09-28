@@ -77,17 +77,13 @@ final class AppState: ObservableObject {
 
     private func attachPaymentStream(for uid: String) {
         paymentTask?.cancel()
-        paymentTask = Task { [weak self] in
+        paymentTask = Task { @MainActor [weak self] in
             do {
                 for try await methods in PaymentService.shared.observePaymentMethods(for: uid) {
-                    await MainActor.run {
-                        self?.paymentMethods = methods
-                    }
+                    self?.paymentMethods = methods
                 }
             } catch {
-                await MainActor.run {
-                    self?.paymentMethods = []
-                }
+                self?.paymentMethods = []
             }
         }
     }

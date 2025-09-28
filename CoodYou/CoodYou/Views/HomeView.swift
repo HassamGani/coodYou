@@ -102,7 +102,17 @@ struct HomeView: View {
             showsUserLocation: true,
             annotationItems: viewModel.selectedHall.map { [$0] } ?? []
         ) { hall in
-            MapMarker(coordinate: hall.coordinate, tint: .accentColor)
+            MapAnnotation(coordinate: hall.coordinate) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 20, height: 20)
+                    
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                }
+            }
         }
         .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
@@ -284,23 +294,6 @@ private extension OrderStatus {
         case .inProgress: return 0.8
         case .delivered, .paid, .closed: return 1
         case .expired, .cancelledBuyer, .cancelledDasher, .disputed: return 0.5
-        }
-    }
-
-    var buyerFacingLabel: String {
-        switch self {
-        case .requested: return "Matching with a partner"
-        case .pooled: return "Pair secured"
-        case .readyToAssign: return "Awaiting dasher"
-        case .claimed: return "Dasher en route"
-        case .inProgress: return "Pickup in progress"
-        case .delivered: return "Delivered"
-        case .paid: return "Paid"
-        case .closed: return "Closed"
-        case .expired: return "Expired"
-        case .cancelledBuyer: return "Cancelled"
-        case .cancelledDasher: return "Dasher cancelled"
-        case .disputed: return "Needs review"
         }
     }
 }

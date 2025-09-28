@@ -55,7 +55,7 @@ struct ProfileView: View {
                         .overlay {
                             Text(user.initials)
                                 .font(.title.weight(.bold))
-                                .foregroundStyle(.accentColor)
+                                .foregroundColor(Color.accentColor)
                         }
                     VStack(spacing: 4) {
                         Text("\(user.firstName) \(user.lastName)")
@@ -333,7 +333,7 @@ private struct VerificationRow: View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(.accentColor)
+                .foregroundColor(Color.accentColor)
             Text(title)
                 .font(.subheadline)
             Spacer()

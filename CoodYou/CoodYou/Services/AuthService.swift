@@ -2,7 +2,9 @@ import Foundation
 import AuthenticationServices
 import FirebaseAuth
 import FirebaseFirestore
+#if canImport(GoogleSignIn)
 import GoogleSignIn
+#endif
 import UIKit
 
 final class AuthService {
@@ -15,6 +17,7 @@ final class AuthService {
         case unsupportedDomain
         case missingSchoolSelection
         case invalidCredential
+        case googleSignInUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -24,6 +27,8 @@ final class AuthService {
                 return "Select your campus to finish onboarding."
             case .invalidCredential:
                 return "We couldn’t verify your credential. Please try again."
+            case .googleSignInUnavailable:
+                return "Google Sign-In is not available in this build."
             }
         }
     }
@@ -70,6 +75,7 @@ final class AuthService {
     }
 
     func signInWithGoogle(presenting viewController: UIViewController) async throws -> UserProfile {
+        #if canImport(GoogleSignIn)
         let signInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
         guard let idToken = signInResult.user.idToken?.tokenString else {
             throw AuthError.invalidCredential
@@ -83,6 +89,9 @@ final class AuthService {
                                              lastName: signInResult.user.profile?.familyName,
                                              schoolId: school.id)
         return profile
+        #else
+        throw AuthError.googleSignInUnavailable
+        #endif
     }
 
     func signInWithApple(credential: ASAuthorizationAppleIDCredential, currentNonce: String?) async throws -> UserProfile {
@@ -90,9 +99,11 @@ final class AuthService {
               let tokenString = String(data: identityToken, encoding: .utf8) else {
             throw AuthError.invalidCredential
         }
-        let firebaseCredential = OAuthProvider.credential(withProviderID: "apple.com",
-                                                          idToken: tokenString,
-                                                          rawNonce: currentNonce)
+        let firebaseCredential = OAuthProvider.appleCredential(
+            withIDToken: tokenString,
+            rawNonce: currentNonce,
+            fullName: credential.fullName
+        )
         let authResult = try await manager.auth.signIn(with: firebaseCredential)
         let email = authResult.user.email ?? credential.email ?? ""
         let school = try validateDomain(for: email)
